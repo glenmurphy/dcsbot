@@ -1,6 +1,7 @@
 use reqwest::header::HeaderMap;
 use serde::{Deserialize};
 use tokio::sync::mpsc::UnboundedSender;
+use std::time::Duration;
 
 /**
  * Structs for serde to be able to deserealize the json
@@ -8,12 +9,12 @@ use tokio::sync::mpsc::UnboundedSender;
 #[derive(Deserialize, Clone, Debug)]
 #[allow(non_snake_case)]
 pub struct Server {
-    NAME: String,
-    MISSION_NAME: String,
-    PLAYERS: String,
+    pub NAME: String,
+    pub MISSION_NAME: String,
+    pub PLAYERS: String,
 
-    //IP_ADDRESS: String,
-    //PORT: String,
+    pub IP_ADDRESS: String,
+    pub PORT: String,
     //MISSION_TIME: String,
     //PLAYERS_MAX: String,
     //PASSWORD: String,
@@ -85,14 +86,21 @@ async fn get_servers(cookies: String) -> Result<Servers, &'static str> {
     headers.insert(reqwest::header::COOKIE, cookies.parse().unwrap());
 
     let client = reqwest::Client::new();
-    let servers = client.get("https://www.digitalcombatsimulator.com/en/personal/server/?ajax=y")
+    let servers_result = client.get("https://www.digitalcombatsimulator.com/en/personal/server/?ajax=y")
         .headers(headers)
         .send()
-        .await.unwrap()
-        .json::<Servers>()
-        .await.unwrap();
-
-    Ok(servers)
+        .await;
+    
+    match servers_result {
+        Ok(servers) => {
+            let json_result = servers.json::<Servers>().await;
+            match json_result {
+                Ok(json) => Ok(json),
+                Err(_) => Err("JSON parse error")
+            }
+        },
+        Err(_) => Err("Load error")
+    }
 }
 
 pub async fn main(username: String, password: String, servers_tx: UnboundedSender<ServersMessage>) {
@@ -102,10 +110,17 @@ pub async fn main(username: String, password: String, servers_tx: UnboundedSende
         return
     }
 
-    match get_servers(cookies.unwrap()).await {
-        Ok(servers) => {
-            //display_servers(&servers, &filter.to_lowercase());
-        },
-        Err(msg) => println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg)
-    }
+    let cookie_string = cookies.unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            match get_servers(cookie_string.to_string()).await {
+                Ok(servers) => {
+                    let _ = servers_tx.send(ServersMessage::Servers(servers));
+                },
+                Err(msg) => println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg)
+            }
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+    });
 }

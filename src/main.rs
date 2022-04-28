@@ -1,4 +1,5 @@
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use crate::dcs::ServersMessage;
 
 use clap::Parser;
 mod dcs;
@@ -17,7 +18,7 @@ struct Args {
     /// Your DCS password (required)
     #[clap(short)]
     password: String,
-
+   
     /// Discord bot token
     #[clap(short)]
     token: String,
@@ -33,11 +34,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let (servers_tx, servers_rx) = unbounded_channel();
+    
+    //let mut hook = hook::Hook::new(args.filter);
 
-    let bot = bot::Bot::new(args.token, servers_rx);
-    bot.connect(); // no await - just let it go
+    tokio::spawn(async move {
+        dcs::main(args.username, args.password, servers_tx).await;
+    });
 
-    dcs::main(args.username, args.password, servers_tx);
+    let mut bot = bot::Bot::new(args.token, servers_rx);
+    bot.connect().await;
 
     Ok(())
 }
