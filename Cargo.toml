@@ -1,0 +1,18 @@
+[package]
+name = "dcsbot"
+version = "0.1.1"
+edition = "2021"
+authors = ["Glen Murphy <glen@glenmurphy.com>"]
+
+[dependencies]
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+clap = { version = "3.1.12", features = ["derive"] }
+serenity = { version = "0.11" }#, default-features = false, features = ["client", "gateway", "framework", "rustls_backend", "model"] }
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = "s"
+strip = "symbols"
