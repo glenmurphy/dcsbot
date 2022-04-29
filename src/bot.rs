@@ -56,14 +56,25 @@ impl EventHandler for Handler {
             Some("!dcsbot") => {
                 match components.next().as_deref() {
                     Some("subscribe") => {
-                        let filter = components.next().unwrap_or("");
-                        let _ = self.handler_tx.send(BotMessage::SubscribeChannel(channel_id, filter.to_string()));
+                        // Split.as_str() would be nice here
+                        let mut filter = vec![];
+                        while let Some(word) = components.next() {
+                            filter.push(word);
+                        }
+                        if filter.len() > 0 {
+                            let filter_text = filter.join(" ");
+                            let _ = self.handler_tx.send(BotMessage::SubscribeChannel(channel_id, filter_text.to_string()));
+                        } else {
+                            let _ = msg.channel_id.say(&context.http, "You need to provide a filter. e.g. ```!dcsbot subscribe australia```").await;
+                        }
                     },
                     Some("unsubscribe") => {
                         let _ = self.handler_tx.send(BotMessage::UnsubscribeChannel(channel_id));
                     },
                     Some(&_) => {},
-                    None => {},
+                    None => {
+                        let _ = msg.channel_id.say(&context.http, "dcsbot commands: ```!dcsbot subscribe australia\n!dcsbot unsubscribe```").await;
+                    },
                 }
             },
             Some(_) => {},
@@ -103,12 +114,17 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
             output.push(o);
         }
 
-        if output.len() > 12 {
+        if output.len() > 10 {
             break;
         }
     }
 
-    output.join("")
+    let string = output.join("");
+    if string.len() > 2000 {
+        string.split_at(2000).0.to_string()
+     } else {
+        string
+     }
 }
 
 impl Bot {
