@@ -27,25 +27,14 @@ struct Args {
     filepath: String
 }
 
-/**
- * We don't really need async for this, especially with the blocking library available,
- * but it's nice to have it for the future (if we want to display progress), and it 
- * doesn't impact the binary size
- */
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let (servers_tx, servers_rx) = unbounded_channel();
-    
-    //let mut hook = hook::Hook::new(args.filter);
 
-    tokio::spawn(async move {
-        dcs::main(args.username, args.password, servers_tx).await;
-    });
-
-    let mut bot = bot::Bot::new(args.token, args.filepath, servers_rx);
-    bot.connect().await;
+    dcs::start(args.username, args.password, servers_tx).await; // will spawn into background
+    bot::start(args.token, args.filepath, servers_rx).await;    // will run main event loop
 
     Ok(())
 }

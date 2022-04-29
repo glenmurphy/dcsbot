@@ -105,7 +105,7 @@ async fn get_servers(cookies: String) -> Result<Servers, &'static str> {
     }
 }
 
-pub async fn main(username: String, password: String, servers_tx: UnboundedSender<ServersMessage>) {
+async fn run_dcs(username: String, password: String, servers_tx: UnboundedSender<ServersMessage>) {
     let cookies = login(username, password).await;
     if let Err(msg) = cookies {
         println!("\x1b[31mLogin failed: {}\x1b[0m", msg);
@@ -114,17 +114,25 @@ pub async fn main(username: String, password: String, servers_tx: UnboundedSende
 
     let cookie_string = cookies.unwrap();
 
+    loop {
+        match get_servers(cookie_string.to_string()).await {
+            Ok(servers) => {
+                let _ = servers_tx.send(ServersMessage::Servers(servers));
+            },
+            Err(msg) => {
+                println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
+                return
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    };
+}
+
+pub async fn start(username: String, password: String, servers_tx: UnboundedSender<ServersMessage>) {
     tokio::spawn(async move {
         loop {
-            match get_servers(cookie_string.to_string()).await {
-                Ok(servers) => {
-                    let _ = servers_tx.send(ServersMessage::Servers(servers));
-                },
-                Err(msg) => {
-                    println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
-                }
-            }
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            run_dcs(username.clone(), password.clone(), servers_tx.clone()).await;
+            tokio::time::sleep(Duration::from_secs(15)).await;
         }
     });
 }

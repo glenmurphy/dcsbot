@@ -304,3 +304,8 @@ impl Bot {
         }
     }
 }
+
+pub async fn start(token: String, config_path: String, servers_rx: UnboundedReceiver<ServersMessage>) {
+    let mut bot = Bot::new(token, config_path, servers_rx);
+    bot.connect().await;
+}
