@@ -40,3 +40,7 @@ Requires [Rust](https://www.rust-lang.org/tools/install)
     cargo build --release
 
 The last command will create dcsbot.exe in your dcsmon/target/release directory - move it to whereever you wish.
+
+On non-Windows systems, you may need to install libssl-dev. On Ubuntu you can do that with:
+
+    sudo apt-get install libssl-dev

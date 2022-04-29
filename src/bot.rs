@@ -120,6 +120,10 @@ fn sanitize_name(name: &str) -> String {
     fixed = fixed.replace("&amp;", "&");
     fixed = fixed.replace("&gt;", ">");
     fixed = fixed.replace("&lt;", "<");
+
+    if Some(20) == fixed.find(" ") {
+        fixed = fixed.replacen(" ", "", 1);
+    }
     fixed.trim().to_string()
 }
 
@@ -171,7 +175,7 @@ impl Bot {
         let content = format!(
             "Server listing with filter '{}' is being prepared...\n\n\
              Server details will be continuously updated in this message (usually within one minute)\n\n\
-             To stop receiving upates, delete this message or type !dcsbot unsubscribe", 
+             To stop receiving updates, delete this message or type !dcsbot unsubscribe", 
             filter);
 
         match ChannelId(channel_id).say(http, content.clone()).await {
