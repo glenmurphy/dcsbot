@@ -102,6 +102,10 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
                 server.DCS_VERSION);
             output.push(o);
         }
+
+        if output.len() > 12 {
+            break;
+        }
     }
 
     output.join("")
