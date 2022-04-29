@@ -15,12 +15,13 @@ pub struct Server {
 
     pub IP_ADDRESS: String,
     pub PORT: String,
-    
+
+    pub DCS_VERSION: String,
+
     //MISSION_TIME: String,
     //PLAYERS_MAX: String,
     //PASSWORD: String,
     //DESCRIPTION: String,
-    //DCS_VERSION: String,
     //MISSION_TIME_FORMATTED: String,
 }
 

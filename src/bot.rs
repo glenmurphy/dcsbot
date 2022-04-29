@@ -14,8 +14,8 @@ use crate::dcs::{Servers, ServersMessage};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::fs::{OpenOptions, File};
-use std::io::BufReader;
+use std::fs::{OpenOptions};
+use std::io::{BufReader, Result};
 
 #[derive(Serialize, Deserialize)]
 pub struct Sub {
@@ -93,12 +93,13 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
 
     for server in &servers.SERVERS {
         if server.NAME.to_lowercase().contains(filter) {
-            let o = format!("**{} - {}**\n{} players online, server address: {}:{}\n\n", 
+            let o = format!("**{} - {}**\n{} players online, server address: {}:{}, version: {}\n\n", 
                 sanitize_name(&server.NAME),
                 sanitize_name(&server.MISSION_NAME),
                 server.PLAYERS.parse::<i32>().unwrap() - 1,
                 server.IP_ADDRESS,
-                server.PORT);
+                server.PORT,
+                server.DCS_VERSION);
             output.push(o);
         }
     }
@@ -118,13 +119,16 @@ impl Bot {
     async fn subscribe_channel(&mut self, http: &Http, channel_id: u64, filter: String) {
         println!("\x1b[32mSubscribing to channel {}\x1b[0m", channel_id);
 
-        let content = "hello; server listing is being prepared";
-        let message = ChannelId(channel_id).say(http, content).await.unwrap();
+        let content = format!(
+            "Server listing with filter '{}' is being prepared...\n\n\
+             Server details will go here - you may delete any other dcsbot messages in this channel", 
+            filter);
+        let message = ChannelId(channel_id).say(http, content.clone()).await.unwrap();
         
         let sub = Sub {
             message_id: message.id.0,
             filter,
-            last_content: content.to_string(),
+            last_content: content,
         };
         self.channels.insert(channel_id, sub);
     }
@@ -136,11 +140,13 @@ impl Bot {
         }
 
         let message_id = self.channels.get(&channel_id).unwrap().message_id;
-        ChannelId(channel_id).delete_message(http, message_id).await.unwrap();
+        let _ = ChannelId(channel_id).delete_message(http, message_id).await;
         self.channels.remove(&channel_id);
     }
 
-    async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) {
+    async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) -> Result<()> {
+        let mut unsubscribe = vec![];
+
         for (channel_id, sub) in self.channels.iter_mut() {
             let content = render_servers(&servers, &sub.filter);
 
@@ -148,36 +154,40 @@ impl Bot {
                 continue;
             }
 
-            ChannelId(*channel_id).edit_message(http, sub.message_id, |m| m.content(content.clone())).await.unwrap();
-            sub.last_content = content;
-        }
-    }
-
-    fn load_channels(&mut self) {
-        let open = OpenOptions::new()
-            .read(true)
-            .open("./channels.json");
-
-        match open {
-            Ok(file) => {
-                let reader = BufReader::new(file);
-                match serde_json::from_reader(reader) {
-                    Ok(result) => {
-                        self.channels = result;
-                        println!("{} channels loaded", self.channels.len());
-                    },
-                    Err(_) => { println!("Error loading channels"); },
+            match ChannelId(*channel_id).edit_message(http, sub.message_id, |m| m.content(content.clone())).await {
+                Ok(_) => { sub.last_content = content; },
+                Err(_) => {
+                    // channel_id or message_id might be invalid; unsubscribe
+                    println!("\x1b[31mError editing message {} in channel {}\x1b[0m", sub.message_id, channel_id);
+                    unsubscribe.push(*channel_id);
+                    continue;
                 }
-            },
-            Err(_) => { println!("No channel file present"); },
-        };
+            }
+        }
+
+        if !unsubscribe.is_empty() {
+            for channel_id in &unsubscribe {
+                self.unsubscribe_channel(http, *channel_id).await;
+            }
+            let _ = self.save_channels().await;
+        }
+
+        Ok(())
     }
 
-    async fn save_channels(&self, file: &File) {
-        match serde_json::to_writer(file, &self.channels) {
-            Ok(_) => { println!("Channels saved") },
-            Err(_) => { println!("Error saving channels"); },
-        }
+    fn load_channels(&mut self) -> Result<()> {
+        let file = OpenOptions::new().read(true).open("./channels.json")?;
+        let reader = BufReader::new(file);
+        
+        self.channels = serde_json::from_reader(reader)?;
+        println!("{} channels loaded", self.channels.len());
+        Ok(())
+    }
+
+    async fn save_channels(&self) -> Result<()> {
+        let file = OpenOptions::new().truncate(true).write(true).create(true).open("./channels.json").unwrap();
+        serde_json::to_writer(file, &self.channels)?;
+        Ok(())
     }
 
     pub async fn connect(&mut self) {
@@ -200,29 +210,30 @@ impl Bot {
             }
         });
 
-        self.load_channels();
+        if let Err(msg) = self.load_channels() {
+            println!("Error loading channels: {}", msg);
+        }
 
         let http = &Http::new(&self.token);
-        let file = OpenOptions::new().write(true).create(true).open("./channels.json").unwrap();
 
         loop {
             tokio::select! {
                 Some(servers_message) = self.servers_rx.recv() => {
                     match servers_message {
                         ServersMessage::Servers(servers) => {
-                            self.broadcast_servers(http, &servers).await;
+                            let _ = self.broadcast_servers(http, &servers).await;
                         }
                     }
-                }
+                },
                 Some(handler_message) = handler_rx.recv() => {
                     match handler_message {
                         BotMessage::SubscribeChannel(channel_id, filter) => {
                             self.subscribe_channel(http, channel_id, filter).await;
-                            self.save_channels(&file).await;
+                            let _ = self.save_channels().await;
                         },
                         BotMessage::UnsubscribeChannel(channel_id) => {
                             self.unsubscribe_channel(http, channel_id).await;
-                            self.save_channels(&file).await;
+                            let _ = self.save_channels().await;
                         },
                     }
                 }
