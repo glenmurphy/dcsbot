@@ -44,3 +44,10 @@ The last command will create dcsbot.exe in your dcsmon/target/release directory 
 On non-Windows systems, you may need to install libssl-dev. On Ubuntu you can do that with:
 
     sudo apt-get install libssl-dev
+
+## Architecture
+
+- The **dcs** module polls and parses the server listing provided by the digitalcombatsimulator.com website and sends the results to **bot**
+- **bot** listens for discord commands via **handler**, and maintains a list of **subscriptions**, stored as {channel_id, message_id, filtertext} and backed up as json to the specified config file
+- When **bot** receives the list of servers from **dcs**, it filters and posts to each **subscription**
+- Every time I write a Rust app I end up with lots of threads communicating through channels. Suggestions for better architecture welcome!
