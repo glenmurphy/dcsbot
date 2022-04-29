@@ -21,6 +21,10 @@ struct Args {
     /// Discord bot token
     #[clap(short)]
     token: String,
+
+    /// Config file location
+    #[clap(short, default_value = "")]
+    filepath: String
 }
 
 /**
@@ -40,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dcs::main(args.username, args.password, servers_tx).await;
     });
 
-    let mut bot = bot::Bot::new(args.token, servers_rx);
+    let mut bot = bot::Bot::new(args.token, args.filepath, servers_rx);
     bot.connect().await;
 
     Ok(())

@@ -30,6 +30,7 @@ pub struct Sub {
 pub struct Bot {
     pub token : String,
     pub servers_rx: UnboundedReceiver<ServersMessage>,
+    pub config_path: String,
     pub channels : HashMap<u64, Sub> // channel_id : message_id mappings
 }
 
@@ -151,10 +152,15 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
 }
 
 impl Bot {
-    pub fn new(token: String, servers_rx: UnboundedReceiver<ServersMessage>) -> Self {
+    pub fn new(token: String, mut config_path: String, servers_rx: UnboundedReceiver<ServersMessage>) -> Self {
+        if config_path.eq("") {
+            config_path = "config.json".to_string();
+        }
+        
         Bot {
             token,
             servers_rx,
+            config_path,
             channels : HashMap::new()
         }
     }
@@ -167,14 +173,20 @@ impl Bot {
              Server details will be continuously updated in this message (usually within one minute)\n\n\
              To stop receiving upates, delete this message or type !dcsbot unsubscribe", 
             filter);
-        let message = ChannelId(channel_id).say(http, content.clone()).await.unwrap();
-        
-        let sub = Sub {
-            message_id: message.id.0,
-            filter,
-            last_content: content,
-        };
-        self.channels.insert(channel_id, sub);
+
+        match ChannelId(channel_id).say(http, content.clone()).await {
+            Ok(message) => {
+                let sub = Sub {
+                    message_id: message.id.0,
+                    filter,
+                    last_content: content,
+                };
+                self.channels.insert(channel_id, sub);   
+            }
+            Err(err) => {
+                println!("Error sending message: {:?}", err);
+            }
+        }
     }
 
     async fn unsubscribe_channel(&mut self, http: &Http, channel_id: u64) {
@@ -220,7 +232,7 @@ impl Bot {
     }
 
     fn load_channels(&mut self) -> Result<()> {
-        let file = OpenOptions::new().read(true).open("./channels.json")?;
+        let file = OpenOptions::new().read(true).open(self.config_path.clone())?;
         let reader = BufReader::new(file);
         
         self.channels = serde_json::from_reader(reader)?;
@@ -229,7 +241,7 @@ impl Bot {
     }
 
     async fn save_channels(&self) -> Result<()> {
-        let file = OpenOptions::new().truncate(true).write(true).create(true).open("./channels.json").unwrap();
+        let file = OpenOptions::new().truncate(true).write(true).create(true).open(self.config_path.clone()).unwrap();
         serde_json::to_writer(file, &self.channels)?;
         Ok(())
     }
