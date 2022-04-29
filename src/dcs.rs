@@ -129,10 +129,10 @@ async fn run_dcs(username: String, password: String, servers_tx: UnboundedSender
 }
 
 pub async fn start(username: String, password: String, servers_tx: UnboundedSender<ServersMessage>) {
-    tokio::spawn(async move {
-        loop {
-            run_dcs(username.clone(), password.clone(), servers_tx.clone()).await;
-            tokio::time::sleep(Duration::from_secs(15)).await;
-        }
-    });
+    loop {
+        run_dcs(username.clone(), password.clone(), servers_tx.clone()).await;
+
+        // Only reaches this in case of failure - consider exponential backoff
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
 }

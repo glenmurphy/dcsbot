@@ -1,8 +1,9 @@
 use tokio::sync::mpsc::{unbounded_channel};
-
 use clap::Parser;
+
 mod dcs;
 mod bot;
+mod handler;
 
 /**
  * Config for clap's command line argument thingy
@@ -30,11 +31,13 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-
     let (servers_tx, servers_rx) = unbounded_channel();
 
-    dcs::start(args.username, args.password, servers_tx).await; // will spawn into background
-    bot::start(args.token, args.filepath, servers_rx).await;    // will run main event loop
+    tokio::spawn(async move {
+        dcs::start(args.username, args.password, servers_tx).await;   
+    });
+
+    bot::start(args.token, args.filepath, servers_rx).await;
 
     Ok(())
 }

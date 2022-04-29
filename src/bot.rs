@@ -1,24 +1,19 @@
 use std::collections::HashMap;
 
-use serenity::async_trait;
-use serenity::model::channel::{Message, GuildChannel};
-use serenity::model::gateway::Ready;
-use serenity::model::id::{ChannelId, GuildId};
-use serenity::model::user::User;
+use serenity::model::id::{ChannelId};
 use serenity::prelude::*;
 use serenity::http::Http;
 use serenity::Client;
-use serenity::model::permissions::Permissions;
 
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
 use crate::dcs::{Servers, ServersMessage};
+use crate::handler::{Handler, HandlerMessage};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::{OpenOptions};
 use std::io::{BufReader, Result};
-
 
 #[derive(Serialize, Deserialize)]
 pub struct Sub {
@@ -32,83 +27,6 @@ pub struct Bot {
     pub servers_rx: UnboundedReceiver<ServersMessage>,
     pub config_path: String,
     pub channels : HashMap<u64, Sub> // channel_id : message_id mappings
-}
-
-pub enum BotMessage {
-    SubscribeChannel(u64, String), // channel_id, filter
-    UnsubscribeChannel(u64),
-}
-
-struct Handler {
-    handler_tx : UnboundedSender<BotMessage>,
-}
-
-fn is_authorized_user(channel : GuildChannel, cache : &std::sync::Arc<serenity::cache::Cache>, author : &User) -> bool {
-    match channel.permissions_for_user(cache, author) {
-        Ok(permissions) => {
-            if permissions.contains(Permissions::MANAGE_CHANNELS) {
-               return true
-            }
-        }
-        Err(err) => {
-            println!("Error getting permissions: {:?}", err);
-        }
-    }
-    false
-}
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn message(&self, context: Context, msg: Message) {
-        let mut components = msg.content.split(" ");
-        if components.next().as_deref().unwrap_or_default() != "!dcsbot" {
-            return;
-        }
-
-        let channel = match context.cache.guild_channel(msg.channel_id) {
-            Some(channel) => channel,
-            None => { println!("Error getting channel"); return }
-        };
-
-        let channel_id = channel.id.0;
-
-        if !is_authorized_user(channel, &context.cache, &msg.author) {
-            println!("User was not an admin");
-            let _ = msg.channel_id.say(&context.http, "Sorry I only obey channel managers").await;
-            return;
-        }
-
-        match components.next().as_deref() {
-            Some("subscribe") => {
-                // Split.as_str() would be nice here
-                let mut filter = vec![];
-                while let Some(word) = components.next() {
-                    filter.push(word);
-                }
-                if filter.len() > 0 {
-                    let filter_text = filter.join(" ");
-                    let _ = self.handler_tx.send(BotMessage::SubscribeChannel(channel_id, filter_text.to_string()));
-                } else {
-                    let _ = msg.channel_id.say(&context.http, "You need to provide a filter. e.g. ```!dcsbot subscribe australia```").await;
-                }
-            },
-            Some("unsubscribe") => {
-                let _ = self.handler_tx.send(BotMessage::UnsubscribeChannel(channel_id));
-            },
-            Some(&_) => {},
-            None => {
-                let _ = msg.channel_id.say(&context.http, "dcsbot commands: ```!dcsbot subscribe australia\n!dcsbot unsubscribe```").await;
-            },
-        }
-    }
-
-    async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} connected", ready.user.name);
-    }
-
-    async fn cache_ready(&self, _: Context, _guilds: Vec<GuildId>) {
-        println!("Cache ready");
-    }
 }
 
 /**
@@ -187,9 +105,7 @@ impl Bot {
                 };
                 self.channels.insert(channel_id, sub);   
             }
-            Err(err) => {
-                println!("Error sending message: {:?}", err);
-            }
+            Err(err) => println!("Error sending message: {:?}", err)
         }
     }
 
@@ -250,7 +166,34 @@ impl Bot {
         Ok(())
     }
 
-    pub async fn connect(&mut self) {
+    async fn event_loop(&mut self, mut handler_rx: UnboundedReceiver<HandlerMessage>) {
+        let http = &Http::new(&self.token);
+        loop {
+            tokio::select! {
+                Some(servers_message) = self.servers_rx.recv() => {
+                    match servers_message {
+                        ServersMessage::Servers(servers) => {
+                            let _ = self.broadcast_servers(http, &servers).await;
+                        }
+                    }
+                },
+                Some(handler_message) = handler_rx.recv() => {
+                    match handler_message {
+                        HandlerMessage::SubscribeChannel(channel_id, filter) => {
+                            self.subscribe_channel(http, channel_id, filter).await;
+                            let _ = self.save_channels().await;
+                        },
+                        HandlerMessage::UnsubscribeChannel(channel_id) => {
+                            self.unsubscribe_channel(http, channel_id).await;
+                            let _ = self.save_channels().await;
+                        },
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn start(&mut self) {
         let intents = GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::GUILDS
             | GatewayIntents::GUILD_MEMBERS
@@ -258,7 +201,7 @@ impl Bot {
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT;
 
-        let  (handler_tx, mut handler_rx) = unbounded_channel();
+        let  (handler_tx, handler_rx) = unbounded_channel();
 
         let mut client = Client::builder(self.token.clone(), intents)
             .event_handler(Handler { 
@@ -277,35 +220,11 @@ impl Bot {
             println!("Error loading channels: {}", msg);
         }
 
-        let http = &Http::new(&self.token);
-
-        loop {
-            tokio::select! {
-                Some(servers_message) = self.servers_rx.recv() => {
-                    match servers_message {
-                        ServersMessage::Servers(servers) => {
-                            let _ = self.broadcast_servers(http, &servers).await;
-                        }
-                    }
-                },
-                Some(handler_message) = handler_rx.recv() => {
-                    match handler_message {
-                        BotMessage::SubscribeChannel(channel_id, filter) => {
-                            self.subscribe_channel(http, channel_id, filter).await;
-                            let _ = self.save_channels().await;
-                        },
-                        BotMessage::UnsubscribeChannel(channel_id) => {
-                            self.unsubscribe_channel(http, channel_id).await;
-                            let _ = self.save_channels().await;
-                        },
-                    }
-                }
-            }
-        }
+        self.event_loop(handler_rx).await;
     }
 }
 
 pub async fn start(token: String, config_path: String, servers_rx: UnboundedReceiver<ServersMessage>) {
     let mut bot = Bot::new(token, config_path, servers_rx);
-    bot.connect().await;
+    bot.start().await;
 }
