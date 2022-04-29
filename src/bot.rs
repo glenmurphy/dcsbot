@@ -3,19 +3,18 @@ use std::collections::HashMap;
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
-use serenity::model::id::{ChannelId, GuildId};
+use serenity::model::id::{ChannelId};
 use serenity::prelude::*;
 use serenity::http::Http;
 use serenity::Client;
 
-use std::sync::atomic::{AtomicBool};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver};
 
 use crate::dcs::{Servers, ServersMessage};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions, File};
 use std::io::BufReader;
 
 #[derive(Serialize, Deserialize)]
@@ -57,19 +56,17 @@ impl EventHandler for Handler {
             Some("!dcsbot") => {
                 match components.next().as_deref() {
                     Some("subscribe") => {
-                        println!("Starting DCS bot");
                         let filter = components.next().unwrap_or("");
                         let _ = self.handler_tx.send(BotMessage::SubscribeChannel(channel_id, filter.to_string()));
                     },
                     Some("unsubscribe") => {
-                        println!("Stopping DCS bot");
                         let _ = self.handler_tx.send(BotMessage::UnsubscribeChannel(channel_id));
                     },
                     Some(&_) => {},
                     None => {},
                 }
             },
-            Some(&_) => {},
+            Some(_) => {},
             None => {},
         }
     }
@@ -96,7 +93,7 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
 
     for server in &servers.SERVERS {
         if server.NAME.to_lowercase().contains(filter) {
-            let o = format!("{} - {}\n{} players online, server address: {}:{}\n\n", 
+            let o = format!("**{} - {}**\n{} players online, server address: {}:{}\n\n", 
                 sanitize_name(&server.NAME),
                 sanitize_name(&server.MISSION_NAME),
                 server.PLAYERS.parse::<i32>().unwrap() - 1,
@@ -115,6 +112,44 @@ impl Bot {
             token,
             servers_rx,
             channels : HashMap::new()
+        }
+    }
+
+    async fn subscribe_channel(&mut self, http: &Http, channel_id: u64, filter: String) {
+        println!("\x1b[32mSubscribing to channel {}\x1b[0m", channel_id);
+
+        let content = "hello; server listing is being prepared";
+        let message = ChannelId(channel_id).say(http, content).await.unwrap();
+        
+        let sub = Sub {
+            message_id: message.id.0,
+            filter,
+            last_content: content.to_string(),
+        };
+        self.channels.insert(channel_id, sub);
+    }
+
+    async fn unsubscribe_channel(&mut self, http: &Http, channel_id: u64) {
+        println!("\x1b[32mUnsubscribing from channel {}\x1b[0m", channel_id);
+        if !self.channels.contains_key(&channel_id) {
+            return
+        }
+
+        let message_id = self.channels.get(&channel_id).unwrap().message_id;
+        ChannelId(channel_id).delete_message(http, message_id).await.unwrap();
+        self.channels.remove(&channel_id);
+    }
+
+    async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) {
+        for (channel_id, sub) in self.channels.iter_mut() {
+            let content = render_servers(&servers, &sub.filter);
+
+            if content.eq(&sub.last_content) {
+                continue;
+            }
+
+            ChannelId(*channel_id).edit_message(http, sub.message_id, |m| m.content(content.clone())).await.unwrap();
+            sub.last_content = content;
         }
     }
 
@@ -138,6 +173,13 @@ impl Bot {
         };
     }
 
+    async fn save_channels(&self, file: &File) {
+        match serde_json::to_writer(file, &self.channels) {
+            Ok(_) => { println!("Channels saved") },
+            Err(_) => { println!("Error saving channels"); },
+        }
+    }
+
     pub async fn connect(&mut self) {
         let intents = GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::DIRECT_MESSAGES
@@ -159,57 +201,28 @@ impl Bot {
         });
 
         self.load_channels();
+
         let http = &Http::new(&self.token);
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open("./channels.json").unwrap();
+        let file = OpenOptions::new().write(true).create(true).open("./channels.json").unwrap();
 
         loop {
             tokio::select! {
                 Some(servers_message) = self.servers_rx.recv() => {
                     match servers_message {
                         ServersMessage::Servers(servers) => {
-                            for (channel_id, sub) in self.channels.iter_mut() {
-                                let content = render_servers(&servers, &sub.filter);
-
-                                if content.eq(&sub.last_content) {
-                                    continue;
-                                }
-
-                                ChannelId(*channel_id).edit_message(http, sub.message_id, |m| m.content(content.clone())).await.unwrap();
-                                sub.last_content = content;
-                            }
+                            self.broadcast_servers(http, &servers).await;
                         }
                     }
                 }
                 Some(handler_message) = handler_rx.recv() => {
                     match handler_message {
                         BotMessage::SubscribeChannel(channel_id, filter) => {
-                            println!("\x1b[32mSubscribing to channel {}\x1b[0m", channel_id);
-                            let content = "hello; server listing is being prepared";
-                            let message = ChannelId(channel_id).say(http, content).await.unwrap();
-                            
-                            let sub = Sub {
-                                message_id: message.id.0,
-                                filter,
-                                last_content: content.to_string(),
-                            };
-                            self.channels.insert(channel_id, sub);
-                            match serde_json::to_writer(&file, &self.channels) {
-                                Ok(_) => { println!("Channels saved") },
-                                Err(_) => { println!("Error saving channels"); },
-                            }
+                            self.subscribe_channel(http, channel_id, filter).await;
+                            self.save_channels(&file).await;
                         },
                         BotMessage::UnsubscribeChannel(channel_id) => {
-                            println!("\x1b[32mUnsubscribing from channel {}\x1b[0m", channel_id);
-                            if !self.channels.contains_key(&channel_id) {
-                                return
-                            }
-
-                            let message_id = self.channels.get(&channel_id).unwrap().message_id;
-                            ChannelId(channel_id).delete_message(http, message_id).await.unwrap();
-                            self.channels.remove(&channel_id);
+                            self.unsubscribe_channel(http, channel_id).await;
+                            self.save_channels(&file).await;
                         },
                     }
                 }

@@ -15,6 +15,7 @@ pub struct Server {
 
     pub IP_ADDRESS: String,
     pub PORT: String,
+    
     //MISSION_TIME: String,
     //PLAYERS_MAX: String,
     //PASSWORD: String,
@@ -118,7 +119,9 @@ pub async fn main(username: String, password: String, servers_tx: UnboundedSende
                 Ok(servers) => {
                     let _ = servers_tx.send(ServersMessage::Servers(servers));
                 },
-                Err(msg) => println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg)
+                Err(msg) => {
+                    println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
+                }
             }
             tokio::time::sleep(Duration::from_secs(10)).await;
         }

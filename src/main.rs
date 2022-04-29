@@ -1,5 +1,4 @@
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
-use crate::dcs::ServersMessage;
+use tokio::sync::mpsc::{unbounded_channel};
 
 use clap::Parser;
 mod dcs;

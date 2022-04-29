@@ -1,23 +1,29 @@
-## dcsmon
+## dcsbot
 ![screenshot](./screenshot.png)
 
-Command-line server browser for [Digital Combat Simulator](https://digitalcombatsimulator.com/)
+Discord server monitoring bot for [Digital Combat Simulator](https://digitalcombatsimulator.com/)
 
-## Usage
+## User Usage
 
-Download the latest dcsmon.exe executable from the [releases](https://github.com/glenmurphy/dcsmon/releases) page
+If you are in a channel with dcsbot, you can use the following commands:
 
-Use your DCS username and password
+```
+!dcsbot subscribe <filter>
+!dcsbot unsubscribe
+```
 
-    dcsmon -u username -p password
+## Host Usage
 
-Filter on server names using the -f option
+Download the latest dcsbot executable from the [releases](https://github.com/glenmurphy/dcsmon/releases) page
 
-    dcsmon -u username -p password -f australia
+Use your DCS username and password as well as your Discord bot token
+
+    ./dcsbot -u username -p password -t token
 
 Other options may be added later, see them with
 
-    dcsmon --help
+    ./dcsbot --help
+
 
 ## Develop
 
@@ -28,4 +34,4 @@ Requires [Rust](https://www.rust-lang.org/tools/install)
     cargo run -- -u username -p password
     cargo build --release
 
-The last command will create dcsmon.exe in your dcsmon/target/release directory - move it to whereever you wish
+The last command will create dcsbot.exe in your dcsmon/target/release directory - move it to whereever you wish.
