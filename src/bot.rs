@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
 use serenity::async_trait;
-use serenity::model::channel::Message;
+use serenity::model::channel::{Message, GuildChannel};
 use serenity::model::gateway::Ready;
-use serenity::model::id::{ChannelId};
+use serenity::model::id::{ChannelId, GuildId};
+use serenity::model::user::User;
 use serenity::prelude::*;
 use serenity::http::Http;
 use serenity::Client;
-use serenity::model::prelude::*;
 use serenity::model::permissions::Permissions;
-use serenity::model::id::GuildId;
 
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver};
 
@@ -19,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use std::fs::{OpenOptions};
 use std::io::{BufReader, Result};
+
 
 #[derive(Serialize, Deserialize)]
 pub struct Sub {
@@ -42,6 +42,20 @@ struct Handler {
     handler_tx : UnboundedSender<BotMessage>,
 }
 
+fn is_authorized_user(channel : GuildChannel, cache : &std::sync::Arc<serenity::cache::Cache>, author : &User) -> bool {
+    match channel.permissions_for_user(cache, author) {
+        Ok(permissions) => {
+            if permissions.contains(Permissions::MANAGE_CHANNELS) {
+               return true
+            }
+        }
+        Err(err) => {
+            println!("Error getting permissions: {:?}", err);
+        }
+    }
+    false
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
@@ -57,17 +71,10 @@ impl EventHandler for Handler {
 
         let channel_id = channel.id.0;
 
-        match channel.permissions_for_user(&context.cache, &msg.author) {
-            Ok(permissions) => {
-                if !permissions.contains(Permissions::MANAGE_CHANNELS) {
-                    println!("User was not an admin");
-                    let _ = msg.channel_id.say(&context.http, "Sorry I only obey channel managers").await;
-                    return;
-                } else {
-                    println!("User is an admin");
-                }
-            }
-            Err(err) => println!("Error getting permissions: {:?}", err)
+        if !is_authorized_user(channel, &context.cache, &msg.author) {
+            println!("User was not an admin");
+            let _ = msg.channel_id.say(&context.http, "Sorry I only obey channel managers").await;
+            return;
         }
 
         match components.next().as_deref() {
@@ -135,12 +142,12 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
         }
     }
 
+    // Crop output to discord limits
     let string = output.join("");
     if string.len() > 2000 {
-        string.split_at(2000).0.to_string()
-     } else {
-        string
+        return string.split_at(2000).0.to_string()
      }
+     string
 }
 
 impl Bot {
@@ -157,7 +164,8 @@ impl Bot {
 
         let content = format!(
             "Server listing with filter '{}' is being prepared...\n\n\
-             Server details will go here - you may delete any other dcsbot messages in this channel", 
+             Server details will be continuously updated in this message (usually within one minute)\n\n\
+             To stop receiving upates, delete this message or type !dcsbot unsubscribe", 
             filter);
         let message = ChannelId(channel_id).say(http, content.clone()).await.unwrap();
         

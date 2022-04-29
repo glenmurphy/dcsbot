@@ -124,7 +124,7 @@ pub async fn main(username: String, password: String, servers_tx: UnboundedSende
                     println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
                 }
             }
-            tokio::time::sleep(Duration::from_secs(10)).await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
 }
