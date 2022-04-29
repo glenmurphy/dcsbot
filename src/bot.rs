@@ -7,6 +7,9 @@ use serenity::model::id::{ChannelId};
 use serenity::prelude::*;
 use serenity::http::Http;
 use serenity::Client;
+use serenity::model::prelude::*;
+use serenity::model::permissions::Permissions;
+use serenity::model::id::GuildId;
 
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender, UnboundedReceiver};
 
@@ -42,48 +45,61 @@ struct Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
-        let channel = match msg.channel_id.to_channel(&context).await {
-            Ok(channel) => channel,
-            Err(why) => {
-                println!("Error getting channel: {:?}", why);
-                return;
-            },
-        };
-        let channel_id = channel.id().0;
-
         let mut components = msg.content.split(" ");
+        if components.next().as_deref().unwrap_or_default() != "!dcsbot" {
+            return;
+        }
+
+        let channel = match context.cache.guild_channel(msg.channel_id) {
+            Some(channel) => channel,
+            None => { println!("Error getting channel"); return }
+        };
+
+        let channel_id = channel.id.0;
+
+        match channel.permissions_for_user(&context.cache, &msg.author) {
+            Ok(permissions) => {
+                if !permissions.contains(Permissions::MANAGE_CHANNELS) {
+                    println!("User was not an admin");
+                    let _ = msg.channel_id.say(&context.http, "Sorry I only obey channel managers").await;
+                    return;
+                } else {
+                    println!("User is an admin");
+                }
+            }
+            Err(err) => println!("Error getting permissions: {:?}", err)
+        }
+
         match components.next().as_deref() {
-            Some("!dcsbot") => {
-                match components.next().as_deref() {
-                    Some("subscribe") => {
-                        // Split.as_str() would be nice here
-                        let mut filter = vec![];
-                        while let Some(word) = components.next() {
-                            filter.push(word);
-                        }
-                        if filter.len() > 0 {
-                            let filter_text = filter.join(" ");
-                            let _ = self.handler_tx.send(BotMessage::SubscribeChannel(channel_id, filter_text.to_string()));
-                        } else {
-                            let _ = msg.channel_id.say(&context.http, "You need to provide a filter. e.g. ```!dcsbot subscribe australia```").await;
-                        }
-                    },
-                    Some("unsubscribe") => {
-                        let _ = self.handler_tx.send(BotMessage::UnsubscribeChannel(channel_id));
-                    },
-                    Some(&_) => {},
-                    None => {
-                        let _ = msg.channel_id.say(&context.http, "dcsbot commands: ```!dcsbot subscribe australia\n!dcsbot unsubscribe```").await;
-                    },
+            Some("subscribe") => {
+                // Split.as_str() would be nice here
+                let mut filter = vec![];
+                while let Some(word) = components.next() {
+                    filter.push(word);
+                }
+                if filter.len() > 0 {
+                    let filter_text = filter.join(" ");
+                    let _ = self.handler_tx.send(BotMessage::SubscribeChannel(channel_id, filter_text.to_string()));
+                } else {
+                    let _ = msg.channel_id.say(&context.http, "You need to provide a filter. e.g. ```!dcsbot subscribe australia```").await;
                 }
             },
-            Some(_) => {},
-            None => {},
+            Some("unsubscribe") => {
+                let _ = self.handler_tx.send(BotMessage::UnsubscribeChannel(channel_id));
+            },
+            Some(&_) => {},
+            None => {
+                let _ = msg.channel_id.say(&context.http, "dcsbot commands: ```!dcsbot subscribe australia\n!dcsbot unsubscribe```").await;
+            },
         }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        println!("{} connected", ready.user.name);
+    }
+
+    async fn cache_ready(&self, _: Context, _guilds: Vec<GuildId>) {
+        println!("Cache ready");
     }
 }
 
@@ -212,6 +228,9 @@ impl Bot {
 
     pub async fn connect(&mut self) {
         let intents = GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::GUILDS
+            | GatewayIntents::GUILD_MEMBERS
+            | GatewayIntents::GUILD_PRESENCES // required for understanding membership information
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT;
 
