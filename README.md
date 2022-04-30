@@ -50,5 +50,7 @@ On non-Windows systems, you may need to install libssl-dev. On Ubuntu you can do
 - Core Discord functionality is provided by [Serenity](https://github.com/serenity-rs/serenity)
 - Many Tokio threads communicating through unbounded_channels
 - The **dcs** module polls and parses the server listing provided by the digitalcombatsimulator.com website and sends the results to **bot**
-- **bot** listens for discord commands via **handler**, and maintains a list of **subscriptions**, stored as {channel_id, message_id, filtertext} and backed up as json to the specified config file
-- When **bot** receives the list of servers from **dcs**, it filters and posts to each **subscription**
+- **bot** listens for discord commands via **handler** - when it gets a valid subscription request, it posts a message to that channel and stores the {channel_id, message_id, and filtertext} as a **Sub** in self.channels (indexed by channel id, so only one active message per channel)
+- When **bot** receives the list of servers from **dcs**, it updates each message_id stored **Sub** with the appropriate filtered view
+- If the message is deleted by an admin or unsubscribe is called, **bot** will delete the subscription
+- Those subs/channels are backed up to the specified config file (config.json by default)
