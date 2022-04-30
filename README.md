@@ -3,6 +3,8 @@
 
 Discord server monitoring bot for [Digital Combat Simulator](https://digitalcombatsimulator.com/)
 
+Contact [glen@glenmurphy.com](mailto:glen@glenmurphy.com) if you want to use this on your Discord server
+
 ## Discord Usage
 
 If you a channel manager on a server with dcsbot, you can use the following commands:
@@ -14,21 +16,15 @@ If you a channel manager on a server with dcsbot, you can use the following comm
 
 dcsbot will post a message and keep that message updated (hover over the 'edited' text to see the last time something changed); this works best if DCSBot is in a channel where only it can post messages, which will prevent its message from being pushed off the screen.
 
-## Bot Provider Usage
+## Create your own dcsbot
 
-If you want to run your own bot instead of using the publicly provided one, you will need to create a Discord bot on the [Discord Developer Portal](https://discord.com/developers/applications). Make note of the bot token.
+This only matters if you want to run your own dcsbot instead of using the official one
 
-Download the latest dcsbot executable from the [releases](https://github.com/glenmurphy/dcsmon/releases) page
-
-Use your DCS username and password as well as your Discord bot token
-
-    ./dcsbot -u username -p password -t token
-
-To add your DCS bot to your server, you need to create an invitation link by going to the Discord Developer > OAuth2 > URL Generator page and selecting the 'bot' scope followed by the 'send messages', 'manage messages', and 'read message history' permissions. Then visit the link generated at the bottom of the page.
-
-Other options may be added later, see them with
-
-    ./dcsbot --help
+1. You will need to create a Discord bot on the [Discord Developer Portal](https://discord.com/developers/applications). Make note of the bot token.
+2. Download the latest dcsbot executable from the [releases](https://github.com/glenmurphy/dcsmon/releases) page
+3. Use your DCS username and password as well as your Discord bot token: `./dcsbot -u username -p password -t token`
+4. To add your DCS bot to your server, create an invitation link by going to the Discord Developer > OAuth2 > URL Generator page and selecting the 'bot' scope followed by the 'send messages' permission. Then visit the link generated at the bottom of the page.
+5. Other options may be added later, see them with `1`./dcsbot --help`
 
 ## Develop
 
