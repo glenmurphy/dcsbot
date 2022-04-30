@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serenity::model::id::{ChannelId};
-use serenity::prelude::*;
+use serenity::prelude::GatewayIntents;
 use serenity::http::Http;
 use serenity::Client;
 
@@ -30,18 +30,26 @@ pub struct Bot {
 }
 
 /**
- * Turns the DCS goobledegook into something usable in a terminal; won't yet correct
- * for the spaces DCS adds to allow line breaks on its website
+ * Turns the DCS goobledegook into something usable
  */
 fn sanitize_name(name: &str) -> String {
+    // Get rid of the decorations people use; this will probably
+    // mess up non-English names, so need to be more artful here
     let mut fixed = name.replace(|c: char| !c.is_ascii(), "");
+
+    // Convert HTML special chars
     fixed = fixed.replace("&amp;", "&");
     fixed = fixed.replace("&gt;", ">");
     fixed = fixed.replace("&lt;", "<");
 
+    // ED adds spaces to allow linebreaks on the DCS website
+    // we can't tell if this is added by them or part of the 
+    // actual data, so if the server owner intentionally had
+    // a space at char 20, this will sadly remove it
     if Some(20) == fixed.find(" ") {
         fixed = fixed.replacen(" ", "", 1);
     }
+    
     fixed.trim().to_string()
 }
 
@@ -67,8 +75,8 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
 
     // Crop output to discord limits
     let string = output.join("");
-    if string.len() > 2000 {
-        return string.split_at(2000).0.to_string()
+    if string.len() > 1999 {
+        return string.split_at(1999).0.to_string()
      }
      string
 }
@@ -121,7 +129,7 @@ impl Bot {
     }
 
     async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) -> Result<()> {
-        let mut unsubscribe = vec![];
+        let mut unsubscribe_list = vec![];
 
         for (channel_id, sub) in self.channels.iter_mut() {
             let content = render_servers(&servers, &sub.filter);
@@ -135,14 +143,14 @@ impl Bot {
                 Err(_) => {
                     // channel_id or message_id might be invalid; unsubscribe
                     println!("\x1b[31mError editing message {} in channel {}\x1b[0m", sub.message_id, channel_id);
-                    unsubscribe.push(*channel_id);
+                    unsubscribe_list.push(*channel_id);
                     continue;
                 }
             }
         }
 
-        if !unsubscribe.is_empty() {
-            for channel_id in &unsubscribe {
+        if !unsubscribe_list.is_empty() {
+            for channel_id in &unsubscribe_list {
                 self.unsubscribe_channel(http, *channel_id).await;
             }
             let _ = self.save_channels().await;
@@ -161,6 +169,8 @@ impl Bot {
     }
 
     async fn save_channels(&self) -> Result<()> {
+        // This might be a blocking point; consider whether the saving system
+        // should run in its own watch-channel thread
         let file = OpenOptions::new().truncate(true).write(true).create(true).open(self.config_path.clone()).unwrap();
         serde_json::to_writer(file, &self.channels)?;
         Ok(())
@@ -197,16 +207,14 @@ impl Bot {
         let intents = GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::GUILDS
             | GatewayIntents::GUILD_MEMBERS
-            | GatewayIntents::GUILD_PRESENCES // required for understanding membership information
+            | GatewayIntents::GUILD_PRESENCES // required to see membership permissions
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT;
 
         let  (handler_tx, handler_rx) = mpsc::unbounded_channel();
 
         let mut client = Client::builder(self.token.clone(), intents)
-            .event_handler(Handler { 
-                handler_tx
-            })
+            .event_handler(Handler { handler_tx })
             .await
             .expect("Error creating client");
 
@@ -214,6 +222,7 @@ impl Bot {
             if let Err(why) = client.start().await {
                 println!("An error occurred while running the client: {:?}", why);
             }
+            // Reaching here would be bad; consider notifying
         });
 
         if let Err(msg) = self.load_channels() {

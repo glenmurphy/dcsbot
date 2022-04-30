@@ -39,5 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     bot::start(args.token, args.filepath, servers_rx).await;
 
+    // Reaching here would be bad; consider notifying
+    println!("Exiting");
+
     Ok(())
 }
