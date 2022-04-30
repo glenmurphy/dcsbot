@@ -145,8 +145,9 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
     let mut last_version_fetch = std::time::SystemTime::UNIX_EPOCH;
 
     loop {
+        // Poll the DCS website every 3 hours to figure out what the latest
+        // Open Beta and Stable version numbers are
         let now = std::time::SystemTime::now();
-        // 3 hours
         if now.duration_since(last_version_fetch).unwrap().as_secs() > 60 * 60 * 3 {
             match get_versions().await {
                 Ok(versions) => {
@@ -158,6 +159,7 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
             }
         }
 
+        // Get the list of servers from the DCS website
         match get_servers(cookie_string.to_string()).await {
             Ok(servers) => {
                 // As we are using regular channels instead of unbounded, this
@@ -169,7 +171,11 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
             }
             Err(msg) => {
                 println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
-                return;
+
+                // Even though this might occur to due simple network errors, 
+                // we fall out of the loop so we can do a complete do-over,
+                // in case the error is due to auth expiring
+                return
             }
         }
 
