@@ -129,7 +129,7 @@ async fn get_versions() -> Result<(String, String), String> {
     match versions_result {
         Ok(versions) => match versions.text().await {
             Ok(text) => parse_versions(text).await,
-            Err(err) => Err(format!("JSON parse error: {:?}", err)),
+            Err(err) => Err(format!("Text parse error: {:?}", err)),
         },
         Err(err) => Err(format!("Load error: {:?}", err)),
     }
@@ -148,11 +148,14 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
         let now = std::time::SystemTime::now();
         // 3 hours
         if now.duration_since(last_version_fetch).unwrap().as_secs() > 60 * 60 * 3 {
-            if let Ok(versions) = get_versions().await {
-                println!("Versions: {:?}", versions);
-                let _ = servers_tx.send(ServersMessage::Versions(versions)).await;
+            match get_versions().await {
+                Ok(versions) => {
+                    println!("Versions: {:?}", versions);
+                    let _ = servers_tx.send(ServersMessage::Versions(versions)).await;
+                    last_version_fetch = now;
+                },
+                Err(err) => println!("Version fetch error: {:?}", err)
             }
-            last_version_fetch = now;
         }
 
         match get_servers(cookie_string.to_string()).await {
