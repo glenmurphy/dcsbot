@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use std::time::Duration;
 
 /**
- * Structs for serde to be able to deserealize the json
+ * Structs for serde to be able to deserialize the json
  */
 #[derive(Deserialize, Clone, Debug)]
 #[allow(non_snake_case)]
