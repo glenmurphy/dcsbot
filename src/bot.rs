@@ -102,12 +102,19 @@ impl Bot {
      */
     fn render_servers(&self, servers: &Servers, filter: &String) -> String {
         let mut output = vec![];
+        let mut sorted = vec![];
 
         for server in &servers.SERVERS {
             if !server.NAME.to_lowercase().contains(filter) {
                 continue;
             }
+            sorted.push(server);
+        }
 
+        sorted.sort_by_cached_key(|a| a.DCS_VERSION.clone());
+        sorted.reverse();
+
+        for server in sorted {
             output.push(format!(
                 "**{} - {}**\n\
                 {}, server: {}:{}, {}\n\n",
