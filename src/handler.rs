@@ -73,7 +73,7 @@ impl EventHandler for Handler {
                         .channel_id
                         .say(
                             &context.http,
-                            "Search filter missing. e.g. ```!dcsbot subscribe australia```",
+                            "Search filter missing. e.g. `!dcsbot subscribe australia`",
                         )
                         .await;
                 }

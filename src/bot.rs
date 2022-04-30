@@ -78,9 +78,9 @@ impl Bot {
     // faster with static strings
     fn format_players(&self, players: &String) -> String {
         match players.parse::<i32>().unwrap() - 1 {
-            //0 => String::from("no players"),
-            1 => String::from("1 player"),
-            x => format!("{} players", x)
+            0 => String::from("0 players"),
+            1 => String::from("__1 player__"),
+            x => format!("__{} players__", x)
         }
     }
 
@@ -147,7 +147,7 @@ impl Bot {
         let content = format!(
             "Server listing with filter '{}' is being prepared...\n\n\
              Server details will be continuously updated in this message (usually within one minute)\n\n\
-             To stop receiving updates, delete this message or type !dcsbot unsubscribe", 
+             To stop receiving updates, delete this message or type `!dcsbot unsubscribe`", 
             filter);
 
         match ChannelId(channel_id).say(http, content.clone()).await {
