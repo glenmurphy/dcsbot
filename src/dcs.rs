@@ -1,7 +1,7 @@
 use reqwest::header::HeaderMap;
-use serde::{Deserialize};
-use tokio::sync::mpsc;
+use serde::Deserialize;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 /**
  * Structs for serde to be able to deserialize the json
@@ -17,7 +17,6 @@ pub struct Server {
     pub PORT: String,
 
     pub DCS_VERSION: String,
-
     //MISSION_TIME: String,
     //PLAYERS_MAX: String,
     //PASSWORD: String,
@@ -28,8 +27,7 @@ pub struct Server {
 #[derive(Deserialize, Clone, Debug)]
 #[allow(non_snake_case)]
 pub struct Servers {
-    pub SERVERS : Vec<Server>,
-
+    pub SERVERS: Vec<Server>,
     //SERVERS_MAX_COUNT: i32,
     //SERVERS_MAX_DATE: String,
     //PLAYERS_COUNT: i32,
@@ -37,7 +35,7 @@ pub struct Servers {
 }
 
 pub enum ServersMessage {
-    Servers(Servers)
+    Servers(Servers),
 }
 
 /**
@@ -63,7 +61,10 @@ async fn login(username: String, password: String) -> Result<String, &'static st
     }
 
     let mut login_headers = HeaderMap::new();
-    login_headers.insert("content-type", "application/x-www-form-urlencoded".parse().unwrap());
+    login_headers.insert(
+        "content-type",
+        "application/x-www-form-urlencoded".parse().unwrap(),
+    );
 
     let client = reqwest::Client::new();
     let res = client.post("https://www.digitalcombatsimulator.com/en/")
@@ -87,33 +88,28 @@ async fn get_servers(cookies: String) -> Result<Servers, &'static str> {
     let mut headers = HeaderMap::new();
     headers.insert(reqwest::header::COOKIE, cookies.parse().unwrap());
 
-    let client = reqwest::Client::new();
-    let servers_result = client.get("https://www.digitalcombatsimulator.com/en/personal/server/?ajax=y")
+    let servers_result = reqwest::Client::new()
+        .get("https://www.digitalcombatsimulator.com/en/personal/server/?ajax=y")
         .headers(headers)
         .send()
         .await;
-    
+
     match servers_result {
-        Ok(servers) => {
-            let json_result = servers.json::<Servers>().await;
-            match json_result {
-                Ok(json) => Ok(json),
-                Err(_) => Err("JSON parse error")
-            }
+        Ok(servers) => match servers.json::<Servers>().await {
+            Ok(json) => Ok(json),
+            Err(err) => Err(format!("JSON parse error: {:?}", err)),
         },
-        Err(_) => Err("Load error")
+        Err(err) => Err(format!("Load error: {:?}", err)),
     }
 }
 
 async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<ServersMessage>) {
     let cookies = login(username, password).await;
     if let Err(msg) = cookies {
-        println!("\x1b[31mLogin failed: {}\x1b[0m", msg);
-        return
+        return println!("\x1b[31mLogin failed: {}\x1b[0m", msg);
     }
 
     let cookie_string = cookies.unwrap();
-
     loop {
         match get_servers(cookie_string.to_string()).await {
             Ok(servers) => {
@@ -123,14 +119,14 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
                 // threading the sending of messages in bot, but this seems like
                 // a reasonable rate limiter.
                 let _ = servers_tx.send(ServersMessage::Servers(servers)).await;
-            },
+            }
             Err(msg) => {
                 println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
-                return
+                return;
             }
         }
         tokio::time::sleep(Duration::from_secs(60)).await;
-    };
+    }
 }
 
 pub async fn start(username: String, password: String, servers_tx: mpsc::Sender<ServersMessage>) {

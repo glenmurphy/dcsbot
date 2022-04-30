@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use serenity::model::id::{ChannelId};
-use serenity::prelude::GatewayIntents;
 use serenity::http::Http;
+use serenity::model::id::ChannelId;
+use serenity::prelude::GatewayIntents;
 use serenity::Client;
 
 use tokio::sync::mpsc;
@@ -12,7 +12,7 @@ use crate::handler::{Handler, HandlerMessage};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::fs::{OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{BufReader, Result};
 
 #[derive(Serialize, Deserialize)]
@@ -23,10 +23,10 @@ pub struct Sub {
 }
 
 pub struct Bot {
-    pub token : String,
+    pub token: String,
     pub servers_rx: mpsc::Receiver<ServersMessage>,
     pub config_path: String,
-    pub channels : HashMap<u64, Sub> // channel_id : message_id mappings
+    pub channels: HashMap<u64, Sub>, // channel_id : message_id mappings
 }
 
 /**
@@ -43,28 +43,31 @@ fn sanitize_name(name: &str) -> String {
     fixed = fixed.replace("&lt;", "<");
 
     // ED adds spaces to allow linebreaks on the DCS website
-    // we can't tell if this is added by them or part of the 
+    // we can't tell if this is added by them or part of the
     // actual data, so if the server owner intentionally had
     // a space at char 20, this will sadly remove it
     if Some(20) == fixed.find(" ") {
         fixed = fixed.replacen(" ", "", 1);
     }
-    
+
     fixed.trim().to_string()
 }
 
-fn render_servers(servers: &Servers, filter : &String) -> String {
+fn render_servers(servers: &Servers, filter: &String) -> String {
     let mut output = vec![];
 
     for server in &servers.SERVERS {
         if server.NAME.to_lowercase().contains(filter) {
-            let o = format!("**{} - {}**\n{} players online, server address: {}:{}, version: {}\n\n", 
+            let o = format!(
+                "**{} - {}**\n\
+                 {} players online, server address: {}:{}, version: {}\n\n",
                 sanitize_name(&server.NAME),
                 sanitize_name(&server.MISSION_NAME),
                 server.PLAYERS.parse::<i32>().unwrap() - 1,
                 server.IP_ADDRESS,
                 server.PORT,
-                server.DCS_VERSION);
+                server.DCS_VERSION
+            );
             output.push(o);
         }
 
@@ -76,22 +79,26 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
     // Crop output to discord limits
     let string = output.join("");
     if string.len() > 1999 {
-        return string.split_at(1999).0.to_string()
-     }
-     string
+        return string.split_at(1999).0.to_string();
+    }
+    string
 }
 
 impl Bot {
-    pub fn new(token: String, mut config_path: String, servers_rx: mpsc::Receiver<ServersMessage>) -> Self {
+    pub fn new(
+        token: String,
+        mut config_path: String,
+        servers_rx: mpsc::Receiver<ServersMessage>,
+    ) -> Self {
         if config_path.eq("") {
             config_path = "config.json".to_string();
         }
-        
+
         Bot {
             token,
             servers_rx,
             config_path,
-            channels : HashMap::new()
+            channels: HashMap::new(),
         }
     }
 
@@ -111,16 +118,16 @@ impl Bot {
                     filter,
                     last_content: content,
                 };
-                self.channels.insert(channel_id, sub);   
+                self.channels.insert(channel_id, sub);
             }
-            Err(err) => println!("Error sending message: {:?}", err)
+            Err(err) => println!("Error sending message: {:?}", err),
         }
     }
 
     async fn unsubscribe_channel(&mut self, http: &Http, channel_id: u64) {
         println!("\x1b[32mUnsubscribing from channel {}\x1b[0m", channel_id);
         if !self.channels.contains_key(&channel_id) {
-            return
+            return;
         }
 
         let message_id = self.channels.get(&channel_id).unwrap().message_id;
@@ -138,11 +145,19 @@ impl Bot {
                 continue;
             }
 
-            match ChannelId(*channel_id).edit_message(http, sub.message_id, |m| m.content(content.clone())).await {
-                Ok(_) => { sub.last_content = content; },
+            match ChannelId(*channel_id)
+                .edit_message(http, sub.message_id, |m| m.content(content.clone()))
+                .await
+            {
+                Ok(_) => {
+                    sub.last_content = content;
+                }
                 Err(_) => {
                     // channel_id or message_id might be invalid; unsubscribe
-                    println!("\x1b[31mError editing message {} in channel {}\x1b[0m", sub.message_id, channel_id);
+                    println!(
+                        "\x1b[31mError editing message {} in channel {}\x1b[0m",
+                        sub.message_id, channel_id
+                    );
                     unsubscribe_list.push(*channel_id);
                     continue;
                 }
@@ -160,9 +175,11 @@ impl Bot {
     }
 
     fn load_channels(&mut self) -> Result<()> {
-        let file = OpenOptions::new().read(true).open(self.config_path.clone())?;
+        let file = OpenOptions::new()
+            .read(true)
+            .open(self.config_path.clone())?;
         let reader = BufReader::new(file);
-        
+
         self.channels = serde_json::from_reader(reader)?;
         println!("{} channels loaded", self.channels.len());
         Ok(())
@@ -171,7 +188,12 @@ impl Bot {
     async fn save_channels(&self) -> Result<()> {
         // This might be a blocking point; consider whether the saving system
         // should run in its own watch-channel thread
-        let file = OpenOptions::new().truncate(true).write(true).create(true).open(self.config_path.clone()).unwrap();
+        let file = OpenOptions::new()
+            .truncate(true)
+            .write(true)
+            .create(true)
+            .open(self.config_path.clone())
+            .unwrap();
         serde_json::to_writer(file, &self.channels)?;
         Ok(())
     }
@@ -211,7 +233,7 @@ impl Bot {
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT;
 
-        let  (handler_tx, handler_rx) = mpsc::unbounded_channel();
+        let (handler_tx, handler_rx) = mpsc::unbounded_channel();
 
         let mut client = Client::builder(self.token.clone(), intents)
             .event_handler(Handler { handler_tx })
