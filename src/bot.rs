@@ -111,6 +111,8 @@ impl Bot {
             sorted.push(server);
         }
 
+        // Without semver understanding, this might do all kinds of stuff, but
+        // for now it's OK because it will at least group the servers together
         sorted.sort_by_cached_key(|a| a.DCS_VERSION.clone());
         sorted.reverse();
 
