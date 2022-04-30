@@ -1,4 +1,4 @@
-use tokio::sync::mpsc::{unbounded_channel};
+use tokio::sync::mpsc;
 use clap::Parser;
 
 mod dcs;
@@ -31,7 +31,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let (servers_tx, servers_rx) = unbounded_channel();
+    let (servers_tx, servers_rx) = mpsc::channel(1);
 
     tokio::spawn(async move {
         dcs::start(args.username, args.password, servers_tx).await;   

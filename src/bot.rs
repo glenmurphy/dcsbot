@@ -5,7 +5,7 @@ use serenity::prelude::*;
 use serenity::http::Http;
 use serenity::Client;
 
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::mpsc;
 
 use crate::dcs::{Servers, ServersMessage};
 use crate::handler::{Handler, HandlerMessage};
@@ -24,7 +24,7 @@ pub struct Sub {
 
 pub struct Bot {
     pub token : String,
-    pub servers_rx: UnboundedReceiver<ServersMessage>,
+    pub servers_rx: mpsc::Receiver<ServersMessage>,
     pub config_path: String,
     pub channels : HashMap<u64, Sub> // channel_id : message_id mappings
 }
@@ -74,7 +74,7 @@ fn render_servers(servers: &Servers, filter : &String) -> String {
 }
 
 impl Bot {
-    pub fn new(token: String, mut config_path: String, servers_rx: UnboundedReceiver<ServersMessage>) -> Self {
+    pub fn new(token: String, mut config_path: String, servers_rx: mpsc::Receiver<ServersMessage>) -> Self {
         if config_path.eq("") {
             config_path = "config.json".to_string();
         }
@@ -166,7 +166,7 @@ impl Bot {
         Ok(())
     }
 
-    async fn event_loop(&mut self, mut handler_rx: UnboundedReceiver<HandlerMessage>) {
+    async fn event_loop(&mut self, mut handler_rx: mpsc::UnboundedReceiver<HandlerMessage>) {
         let http = &Http::new(&self.token);
         loop {
             tokio::select! {
@@ -201,7 +201,7 @@ impl Bot {
             | GatewayIntents::DIRECT_MESSAGES
             | GatewayIntents::MESSAGE_CONTENT;
 
-        let  (handler_tx, handler_rx) = unbounded_channel();
+        let  (handler_tx, handler_rx) = mpsc::unbounded_channel();
 
         let mut client = Client::builder(self.token.clone(), intents)
             .event_handler(Handler { 
@@ -224,7 +224,7 @@ impl Bot {
     }
 }
 
-pub async fn start(token: String, config_path: String, servers_rx: UnboundedReceiver<ServersMessage>) {
+pub async fn start(token: String, config_path: String, servers_rx: mpsc::Receiver<ServersMessage>) {
     let mut bot = Bot::new(token, config_path, servers_rx);
     bot.start().await;
 }

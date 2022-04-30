@@ -1,6 +1,6 @@
 use reqwest::header::HeaderMap;
 use serde::{Deserialize};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc;
 use std::time::Duration;
 
 /**
@@ -105,7 +105,7 @@ async fn get_servers(cookies: String) -> Result<Servers, &'static str> {
     }
 }
 
-async fn run_dcs(username: String, password: String, servers_tx: UnboundedSender<ServersMessage>) {
+async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<ServersMessage>) {
     let cookies = login(username, password).await;
     if let Err(msg) = cookies {
         println!("\x1b[31mLogin failed: {}\x1b[0m", msg);
@@ -117,7 +117,11 @@ async fn run_dcs(username: String, password: String, servers_tx: UnboundedSender
     loop {
         match get_servers(cookie_string.to_string()).await {
             Ok(servers) => {
-                let _ = servers_tx.send(ServersMessage::Servers(servers));
+                // Will block if channel is full (max 1 message). This can be
+                // caused if sending messages takes too long. We can consider
+                // threading the sending of messages, but this is a reasonable
+                // rate limiter.
+                let _ = servers_tx.send(ServersMessage::Servers(servers)).await;
             },
             Err(msg) => {
                 println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
@@ -128,7 +132,7 @@ async fn run_dcs(username: String, password: String, servers_tx: UnboundedSender
     };
 }
 
-pub async fn start(username: String, password: String, servers_tx: UnboundedSender<ServersMessage>) {
+pub async fn start(username: String, password: String, servers_tx: mpsc::Sender<ServersMessage>) {
     loop {
         run_dcs(username.clone(), password.clone(), servers_tx.clone()).await;
 
