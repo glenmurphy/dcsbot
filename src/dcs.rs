@@ -36,6 +36,7 @@ pub struct Servers {
 
 pub enum ServersMessage {
     Servers(Servers),
+    Versions((String, String))
 }
 
 /**
@@ -84,7 +85,7 @@ async fn login(username: String, password: String) -> Result<String, &'static st
 /**
  * Gets the current list of servers from the DCS website
  */
-async fn get_servers(cookies: String) -> Result<Servers, &'static str> {
+async fn get_servers(cookies: String) -> Result<Servers, String> {
     let mut headers = HeaderMap::new();
     headers.insert(reqwest::header::COOKIE, cookies.parse().unwrap());
 
@@ -103,6 +104,37 @@ async fn get_servers(cookies: String) -> Result<Servers, &'static str> {
     }
 }
 
+async fn parse_versions(text: String) -> Result<(String, String), String> {
+    let mut lines = text.split("/en/news/changelog/openbeta/");
+    let beta = match lines.nth(2) {
+        Some(line) => line.split("/").nth(0).unwrap(),
+        _ => { return Err("Beta version not found".to_string()) }
+    };
+
+    let mut lines = text.split("/en/news/changelog/stable/");
+    let stable = match lines.nth(2) {
+        Some(line) => line.split("/").nth(0).unwrap(),
+        _ => { return Err("Stable version not found".to_string()) }
+    };
+
+    Ok((beta.to_string(), stable.to_string()))
+}
+
+async fn get_versions() -> Result<(String, String), String> {
+    let versions_result = reqwest::Client::new()
+        .get("https://www.digitalcombatsimulator.com/en/news/changelog/")
+        .send()
+        .await;
+
+    match versions_result {
+        Ok(versions) => match versions.text().await {
+            Ok(text) => parse_versions(text).await,
+            Err(err) => Err(format!("JSON parse error: {:?}", err)),
+        },
+        Err(err) => Err(format!("Load error: {:?}", err)),
+    }
+}
+
 async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<ServersMessage>) {
     let cookies = login(username, password).await;
     if let Err(msg) = cookies {
@@ -110,7 +142,19 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
     }
 
     let cookie_string = cookies.unwrap();
+    let mut last_version_fetch = std::time::SystemTime::UNIX_EPOCH;
+
     loop {
+        let now = std::time::SystemTime::now();
+        // 3 hours
+        if now.duration_since(last_version_fetch).unwrap().as_secs() > 60 * 60 * 3 {
+            if let Ok(versions) = get_versions().await {
+                println!("Versions: {:?}", versions);
+                let _ = servers_tx.send(ServersMessage::Versions(versions)).await;
+            }
+            last_version_fetch = now;
+        }
+
         match get_servers(cookie_string.to_string()).await {
             Ok(servers) => {
                 // As we are using regular channels instead of unbounded, this
@@ -125,6 +169,7 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
                 return;
             }
         }
+
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
