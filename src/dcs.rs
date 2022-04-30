@@ -117,10 +117,11 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
     loop {
         match get_servers(cookie_string.to_string()).await {
             Ok(servers) => {
-                // Will block if channel is full (max 1 message). This can be
+                // As we are using regular channels instead of unbounded, this
+                // will block if channel is full (max 1 message). This can be
                 // caused if sending messages takes too long. We can consider
-                // threading the sending of messages, but this is a reasonable
-                // rate limiter.
+                // threading the sending of messages in bot, but this seems like
+                // a reasonable rate limiter.
                 let _ = servers_tx.send(ServersMessage::Servers(servers)).await;
             },
             Err(msg) => {
