@@ -15,7 +15,7 @@ use serde_json;
 use std::fs::OpenOptions;
 use std::io::{BufReader, Result};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Sub {
     pub message_id: u64,
     pub filter: String,
@@ -25,63 +25,10 @@ pub struct Sub {
 pub struct Bot {
     pub token: String,
     pub servers_rx: mpsc::Receiver<ServersMessage>,
+    version_beta: String,
+    version_stable: String,
     pub config_path: String,
     pub channels: HashMap<u64, Sub>, // channel_id : message_id mappings
-}
-
-/**
- * Turns the DCS goobledegook into something usable
- */
-fn sanitize_name(name: &str) -> String {
-    // Get rid of the decorations people use; this will probably
-    // mess up non-English names, so need to be more artful here
-    let mut fixed = name.replace(|c: char| !c.is_ascii(), "");
-
-    // Convert HTML special chars
-    fixed = fixed.replace("&amp;", "&");
-    fixed = fixed.replace("&gt;", ">");
-    fixed = fixed.replace("&lt;", "<");
-
-    // ED adds spaces to allow linebreaks on the DCS website
-    // we can't tell if this is added by them or part of the
-    // actual data, so if the server owner intentionally had
-    // a space at char 20, this will sadly remove it
-    if Some(20) == fixed.find(" ") {
-        fixed = fixed.replacen(" ", "", 1);
-    }
-
-    fixed.trim().to_string()
-}
-
-fn render_servers(servers: &Servers, filter: &String) -> String {
-    let mut output = vec![];
-
-    for server in &servers.SERVERS {
-        if server.NAME.to_lowercase().contains(filter) {
-            let o = format!(
-                "**{} - {}**\n\
-                 {} players online, server address: {}:{}, version: {}\n\n",
-                sanitize_name(&server.NAME),
-                sanitize_name(&server.MISSION_NAME),
-                server.PLAYERS.parse::<i32>().unwrap() - 1,
-                server.IP_ADDRESS,
-                server.PORT,
-                server.DCS_VERSION
-            );
-            output.push(o);
-        }
-
-        if output.len() > 10 {
-            break;
-        }
-    }
-
-    // Crop output to discord limits
-    let string = output.join("");
-    if string.len() > 1999 {
-        return string.split_at(1999).0.to_string();
-    }
-    string
 }
 
 impl Bot {
@@ -97,9 +44,92 @@ impl Bot {
         Bot {
             token,
             servers_rx,
+            version_beta : String::new(),
+            version_stable : String::new(),
             config_path,
             channels: HashMap::new(),
         }
+    }
+    /**
+     * Turns the DCS goobledegook into something usable
+     */
+    fn sanitize_name(&self, name: &str) -> String {
+        // Get rid of the decorations people use; this will probably
+        // mess up non-English names, so need to be more artful here
+        let mut fixed = name.replace(|c: char| !c.is_ascii(), "");
+
+        // Convert HTML special chars
+        fixed = fixed.replace("&amp;", "&");
+        fixed = fixed.replace("&gt;", ">");
+        fixed = fixed.replace("&lt;", "<");
+
+        // ED adds spaces to allow linebreaks on the DCS website
+        // we can't tell if this is added by them or part of the
+        // actual data, so if the server owner intentionally had
+        // a space at char 20, this will sadly remove it
+        if Some(20) == fixed.find(" ") {
+            fixed = fixed.replacen(" ", "", 1);
+        }
+
+        fixed.trim().to_string()
+    }
+
+    // These format functions are probably slow, and might be made 
+    // faster with static strings
+    fn format_players(&self, players: &String) -> String {
+        match players.parse::<i32>().unwrap() - 1 {
+            //0 => String::from("no players"),
+            1 => String::from("1 player"),
+            x => format!("{} players", x)
+        }
+    }
+
+    // These format functions are probably slow, and might be made 
+    // faster with static strings
+    fn format_version(&self, version: &String) -> String {
+        if version.eq(&self.version_beta) {
+            return format!("Open Beta ({})", version)
+        }
+        if version.eq(&self.version_stable) {
+            return format!("Stable ({})", version)
+        }
+        return version.clone()
+    }
+
+    /**
+     * Takes a list of all the servers, finds the one matching <filter>, and
+     * renders the result into Discord-friendly markdown
+     */
+    fn render_servers(&self, servers: &Servers, filter: &String) -> String {
+        let mut output = vec![];
+
+        for server in &servers.SERVERS {
+            if !server.NAME.to_lowercase().contains(filter) {
+                continue;
+            }
+
+            output.push(format!(
+                "**{} - {}**\n\
+                {}, server: {}:{}, {}\n\n",
+                self.sanitize_name(&server.NAME),
+                self.sanitize_name(&server.MISSION_NAME),
+                self.format_players(&server.PLAYERS),
+                server.IP_ADDRESS,
+                server.PORT,
+                self.format_version(&server.DCS_VERSION)
+            ));
+
+            if output.len() > 10 {
+                break;
+            }
+        }
+
+        // Crop output to discord limits
+        let string = output.join("");
+        if string.len() > 1999 {
+            return string.split_at(1999).0.to_string();
+        }
+        string
     }
 
     async fn subscribe_channel(&mut self, http: &Http, channel_id: u64, filter: String) {
@@ -138,8 +168,8 @@ impl Bot {
     async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) -> Result<()> {
         let mut unsubscribe_list = vec![];
 
-        for (channel_id, sub) in self.channels.iter_mut() {
-            let content = render_servers(&servers, &sub.filter);
+        for (channel_id, sub) in self.channels.clone().iter_mut() {
+            let content = self.render_servers(&servers, &sub.filter);
 
             if content.eq(&sub.last_content) {
                 continue;
@@ -198,6 +228,12 @@ impl Bot {
         Ok(())
     }
 
+    fn set_versions(&mut self, beta: String, stable: String) {
+        println!("Updating versions. beta: {}, stable: {}", beta, stable);
+        self.version_beta = beta;
+        self.version_stable = stable;
+    }
+
     async fn event_loop(&mut self, mut handler_rx: mpsc::UnboundedReceiver<HandlerMessage>) {
         let http = &Http::new(&self.token);
         loop {
@@ -206,6 +242,9 @@ impl Bot {
                     match servers_message {
                         ServersMessage::Servers(servers) => {
                             let _ = self.broadcast_servers(http, &servers).await;
+                        }
+                        ServersMessage::Versions(versions) => {
+                            self.set_versions(versions.0, versions.1)
                         }
                     }
                 },
@@ -226,6 +265,10 @@ impl Bot {
     }
 
     pub async fn start(&mut self) {
+        if let Err(msg) = self.load_channels() {
+            println!("Error loading channels: {}", msg);
+        }
+
         let intents = GatewayIntents::GUILD_MESSAGES
             | GatewayIntents::GUILDS
             | GatewayIntents::GUILD_MEMBERS
@@ -246,10 +289,6 @@ impl Bot {
             }
             // Reaching here would be bad; consider notifying
         });
-
-        if let Err(msg) = self.load_channels() {
-            println!("Error loading channels: {}", msg);
-        }
 
         self.event_loop(handler_rx).await;
     }
