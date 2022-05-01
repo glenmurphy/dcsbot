@@ -1,5 +1,5 @@
-use clap::Parser;
 use tokio::sync::mpsc;
+use clap::Parser;
 
 mod bot;
 mod dcs;

@@ -1,19 +1,20 @@
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::{BufReader, Result};
+
+use tokio::sync::mpsc;
+
+use serde::{Deserialize, Serialize};
+use serde_json;
 
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
 use serenity::prelude::GatewayIntents;
 use serenity::Client;
 
-use tokio::sync::mpsc;
-
 use crate::dcs::{Servers, ServersMessage};
 use crate::handler::{Handler, HandlerMessage};
 
-use serde::{Deserialize, Serialize};
-use serde_json;
-use std::fs::OpenOptions;
-use std::io::{BufReader, Result};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Sub {
@@ -296,7 +297,10 @@ impl Bot {
             if let Err(why) = client.start().await {
                 println!("An error occurred while running the client: {:?}", why);
             }
-            // Reaching here would be bad; consider notifying
+            // Reaching here would be bad; consider notifying.
+            // TODO: figure out the causes of reaching here (e.g. is Serenity 
+            // robust against disconnection?)
+            println!("Unexpected exit");
         });
 
         self.event_loop(handler_rx).await;

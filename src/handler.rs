@@ -1,3 +1,5 @@
+use tokio::sync::mpsc::UnboundedSender;
+
 use serenity::async_trait;
 use serenity::model::channel::{GuildChannel, Message};
 use serenity::model::gateway::Ready;
@@ -5,7 +7,6 @@ use serenity::model::id::GuildId;
 use serenity::model::permissions::Permissions;
 use serenity::model::user::User;
 use serenity::prelude::*;
-use tokio::sync::mpsc::UnboundedSender;
 
 pub enum HandlerMessage {
     SubscribeChannel(u64, String), // channel_id, filter

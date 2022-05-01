@@ -1,7 +1,7 @@
-use reqwest::header::HeaderMap;
-use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use serde::Deserialize;
+use reqwest::header::HeaderMap;
 
 /**
  * Structs for serde to be able to deserialize the json
@@ -127,9 +127,11 @@ async fn get_versions() -> Result<(String, String), String> {
         .await;
 
     match versions_result {
-        Ok(versions) => match versions.text().await {
-            Ok(text) => parse_versions(text).await,
-            Err(err) => Err(format!("Text parse error: {:?}", err)),
+        Ok(versions) => {
+            match versions.text().await {
+                Ok(text) => parse_versions(text).await,
+                Err(err) => Err(format!("Text parse error: {:?}", err)),
+            }
         },
         Err(err) => Err(format!("Load error: {:?}", err)),
     }
@@ -187,7 +189,8 @@ pub async fn start(username: String, password: String, servers_tx: mpsc::Sender<
     loop {
         run_dcs(username.clone(), password.clone(), servers_tx.clone()).await;
 
-        // Only reaches this in case of failure - consider exponential backoff
+        // Only reaches this in case of failure - consider notifying and 
+        // exponential backoff
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
 }
