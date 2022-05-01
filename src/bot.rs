@@ -48,7 +48,7 @@ impl Bot {
         }
     }
     /**
-     * Turns the DCS goobledegook into something usable
+     * Turns the DCS-provided strings into something usable
      */
     fn sanitize_name(&self, name: &str) -> String {
         // Get rid of the decorations people use; this will probably
@@ -72,8 +72,8 @@ impl Bot {
     }
 
     // These format functions are probably slow, and might be made
-    // faster with static strings
-    fn format_players(&self, players: &String) -> String {
+    // better with static strings
+    fn format_players(&self, players: &str) -> String {
         match players.parse::<i32>().unwrap() - 1 {
             0 => String::from("0 players"),
             1 => String::from("__1 player__"),
@@ -82,15 +82,15 @@ impl Bot {
     }
 
     // These format functions are probably slow, and might be made
-    // faster with static strings
-    fn format_version(&self, version: &String) -> String {
+    // better with static strings
+    fn format_version(&self, version: &str) -> String {
         if version.eq(&self.version_beta) {
             return format!("Open Beta ({})", version);
         }
         if version.eq(&self.version_stable) {
             return format!("Stable ({})", version);
         }
-        return version.clone();
+        String::from(version)
     }
 
     /**
@@ -138,6 +138,11 @@ impl Bot {
         string
     }
 
+    /**
+     * Subscribes to a channel - will create a message in that channel to post to; if
+     * that is unsuccessful, the subscribe will fail, otherwise we will track the
+     * channel_id/message_id/filter
+     */
     async fn subscribe_channel(&mut self, http: &Http, channel_id: u64, filter: String) {
         println!("\x1b[32mSubscribing to channel {}\x1b[0m", channel_id);
 
@@ -160,6 +165,10 @@ impl Bot {
         }
     }
 
+    /**
+     * Unsubscribes from a channel - will attempt to delete the status message we had
+     * in that channel
+     */
     async fn unsubscribe_channel(&mut self, http: &Http, channel_id: u64) {
         println!("\x1b[32mUnsubscribing from channel {}\x1b[0m", channel_id);
         if !self.channels.contains_key(&channel_id) {
@@ -171,6 +180,13 @@ impl Bot {
         self.channels.remove(&channel_id);
     }
 
+    /**
+     * Go through all subscribed channels/message_ids and update the messages with
+     * the current server status. Will unsubscribe from any channel where the update
+     * fails (usually because the message was deleted or we lost posting permissions)
+     * 
+     * TODO: Consider messaging server owner on unsubscribe
+     */
     async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) -> Result<()> {
         let mut unsubscribe_list = vec![];
 
@@ -210,6 +226,9 @@ impl Bot {
         Ok(())
     }
 
+    /**
+     * Load stored channel subscriptions from our file on disk
+     */
     fn load_channels(&mut self) -> Result<()> {
         let file = OpenOptions::new()
             .read(true)
@@ -221,9 +240,12 @@ impl Bot {
         Ok(())
     }
 
+    /**
+     * Load stored channel subscriptions from our file on disk
+     * TODO: This might block the rest of the app; consider whether this
+     * should run in its own watch-channel-powered thread
+     */
     async fn save_channels(&self) -> Result<()> {
-        // This might be a blocking point; consider whether the saving system
-        // should run in its own watch-channel thread
         let file = OpenOptions::new()
             .truncate(true)
             .write(true)
@@ -234,12 +256,18 @@ impl Bot {
         Ok(())
     }
 
+    /**
+     * Update the known version strings for Open Beta and Stable
+     */
     fn set_versions(&mut self, beta: String, stable: String) {
         println!("Updating versions. beta: {}, stable: {}", beta, stable);
         self.version_beta = beta;
         self.version_stable = stable;
     }
 
+    /**
+     * Core event loop for the bot - will listen to messages from the dcs and handler modules
+     */
     async fn event_loop(&mut self, mut handler_rx: mpsc::UnboundedReceiver<HandlerMessage>) {
         let http = &Http::new(&self.token);
         loop {
