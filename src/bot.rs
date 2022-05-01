@@ -1,20 +1,16 @@
-use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::{BufReader, Result};
-
-use tokio::sync::mpsc;
-
 use serde::{Deserialize, Serialize};
 use serde_json;
-
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
 use serenity::prelude::GatewayIntents;
 use serenity::Client;
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::{BufReader, Result};
+use tokio::sync::mpsc;
 
 use crate::dcs::{Servers, ServersMessage};
 use crate::handler::{Handler, HandlerMessage};
-
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Sub {
@@ -45,8 +41,8 @@ impl Bot {
         Bot {
             token,
             servers_rx,
-            version_beta : String::new(),
-            version_stable : String::new(),
+            version_beta: String::new(),
+            version_stable: String::new(),
             config_path,
             channels: HashMap::new(),
         }
@@ -75,26 +71,26 @@ impl Bot {
         fixed.trim().to_string()
     }
 
-    // These format functions are probably slow, and might be made 
+    // These format functions are probably slow, and might be made
     // faster with static strings
     fn format_players(&self, players: &String) -> String {
         match players.parse::<i32>().unwrap() - 1 {
             0 => String::from("0 players"),
             1 => String::from("__1 player__"),
-            x => format!("__{} players__", x)
+            x => format!("__{} players__", x),
         }
     }
 
-    // These format functions are probably slow, and might be made 
+    // These format functions are probably slow, and might be made
     // faster with static strings
     fn format_version(&self, version: &String) -> String {
         if version.eq(&self.version_beta) {
-            return format!("Open Beta ({})", version)
+            return format!("Open Beta ({})", version);
         }
         if version.eq(&self.version_stable) {
-            return format!("Stable ({})", version)
+            return format!("Stable ({})", version);
         }
-        return version.clone()
+        return version.clone();
     }
 
     /**
@@ -120,13 +116,13 @@ impl Bot {
         for server in sorted {
             output.push(format!(
                 "**{} - {}**\n\
-                {}, server: {}:{}, {}\n\n",
+                {}, {}, {}:{}\n\n",
                 self.sanitize_name(&server.NAME),
                 self.sanitize_name(&server.MISSION_NAME),
                 self.format_players(&server.PLAYERS),
+                self.format_version(&server.DCS_VERSION),
                 server.IP_ADDRESS,
                 server.PORT,
-                self.format_version(&server.DCS_VERSION)
             ));
 
             if output.len() > 10 {
@@ -298,7 +294,7 @@ impl Bot {
                 println!("An error occurred while running the client: {:?}", why);
             }
             // Reaching here would be bad; consider notifying.
-            // TODO: figure out the causes of reaching here (e.g. is Serenity 
+            // TODO: figure out the causes of reaching here (e.g. is Serenity
             // robust against disconnection?)
             println!("Unexpected exit");
         });

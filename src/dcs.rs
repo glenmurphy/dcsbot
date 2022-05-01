@@ -1,7 +1,7 @@
+use reqwest::header::HeaderMap;
+use serde::Deserialize;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use serde::Deserialize;
-use reqwest::header::HeaderMap;
 
 /**
  * Structs for serde to be able to deserialize the json
@@ -36,7 +36,7 @@ pub struct Servers {
 
 pub enum ServersMessage {
     Servers(Servers),
-    Versions((String, String))
+    Versions((String, String)),
 }
 
 /**
@@ -108,13 +108,13 @@ async fn parse_versions(text: String) -> Result<(String, String), String> {
     let mut lines = text.split("/en/news/changelog/openbeta/");
     let beta = match lines.nth(2) {
         Some(line) => line.split("/").nth(0).unwrap(),
-        _ => { return Err("Beta version not found".to_string()) }
+        _ => return Err("Beta version not found".to_string()),
     };
 
     let mut lines = text.split("/en/news/changelog/stable/");
     let stable = match lines.nth(2) {
         Some(line) => line.split("/").nth(0).unwrap(),
-        _ => { return Err("Stable version not found".to_string()) }
+        _ => return Err("Stable version not found".to_string()),
     };
 
     Ok((beta.to_string(), stable.to_string()))
@@ -127,11 +127,9 @@ async fn get_versions() -> Result<(String, String), String> {
         .await;
 
     match versions_result {
-        Ok(versions) => {
-            match versions.text().await {
-                Ok(text) => parse_versions(text).await,
-                Err(err) => Err(format!("Text parse error: {:?}", err)),
-            }
+        Ok(versions) => match versions.text().await {
+            Ok(text) => parse_versions(text).await,
+            Err(err) => Err(format!("Text parse error: {:?}", err)),
         },
         Err(err) => Err(format!("Load error: {:?}", err)),
     }
@@ -156,8 +154,8 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
                     println!("Versions: {:?}", versions);
                     let _ = servers_tx.send(ServersMessage::Versions(versions)).await;
                     last_version_fetch = now;
-                },
-                Err(err) => println!("Version fetch error: {:?}", err)
+                }
+                Err(err) => println!("Version fetch error: {:?}", err),
             }
         }
 
@@ -174,10 +172,10 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
             Err(msg) => {
                 println!("\x1b[31mFailed to get server list: {}\x1b[0m", msg);
 
-                // Even though this might occur to due simple network errors, 
+                // Even though this might occur to due simple network errors,
                 // we fall out of the loop so we can do a complete do-over,
                 // in case the error is due to auth expiring
-                return
+                return;
             }
         }
 
@@ -189,7 +187,7 @@ pub async fn start(username: String, password: String, servers_tx: mpsc::Sender<
     loop {
         run_dcs(username.clone(), password.clone(), servers_tx.clone()).await;
 
-        // Only reaches this in case of failure - consider notifying and 
+        // Only reaches this in case of failure - consider notifying and
         // exponential backoff
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
