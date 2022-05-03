@@ -21,12 +21,11 @@ pub struct Sub {
 }
 
 pub struct Bot {
-    pub token: String,
-    pub servers_rx: mpsc::Receiver<ServersMessage>,
-    version_beta: String,
-    version_stable: String,
-    pub config_path: String,
-    pub channels: HashMap<u64, Sub>, // channel_id : message_id mappings
+    token: String,
+    servers_rx: mpsc::Receiver<ServersMessage>,
+    versions: HashMap<String, String>,
+    config_path: String,
+    channels: HashMap<u64, Sub>, // channel_id : message_id mappings
 }
 
 impl Bot {
@@ -42,8 +41,7 @@ impl Bot {
         Bot {
             token,
             servers_rx,
-            version_beta: String::new(),
-            version_stable: String::new(),
+            versions: HashMap::new(),
             config_path,
             channels: HashMap::new(),
         }
@@ -82,13 +80,11 @@ impl Bot {
         }
     }
 
-    // These format functions are probably slow, and might be made
-    // better with static strings
+    // See set_versions for string definitions
     fn format_version(&self, version: &str) -> String {
-        match version {
-            v if v.eq(&self.version_beta) => format!("Open Beta ({})", v),
-            v if v.eq(&self.version_stable) => format!("Stable ({})", v),
-            v => String::from(v)
+        match self.versions.get(version) {
+            Some(vstr) => String::from(vstr),
+            None => String::from(version)
         }
     }
 
@@ -299,12 +295,15 @@ impl Bot {
     }
 
     /**
-     * Update the known version strings for Open Beta and Stable
+     * Update the known version strings for Open Beta and Stable; this is used in
+     * format_version
      */
     fn set_versions(&mut self, beta: String, stable: String) {
         println!("Updating versions. beta: {}, stable: {}", beta, stable);
-        self.version_beta = beta;
-        self.version_stable = stable;
+        self.versions = HashMap::from([
+            (beta.clone(), format!("Open Beta ({})", beta)),
+            (stable.clone(), format!("Stable ({})", stable)),
+        ]);
     }
 
     /**
