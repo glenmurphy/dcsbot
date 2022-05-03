@@ -85,13 +85,11 @@ impl Bot {
     // These format functions are probably slow, and might be made
     // better with static strings
     fn format_version(&self, version: &str) -> String {
-        if version.eq(&self.version_beta) {
-            return format!("Open Beta ({})", version);
+        match version {
+            v if v.eq(&self.version_beta) => format!("Open Beta ({})", v),
+            v if v.eq(&self.version_stable) => format!("Stable ({})", v),
+            v => String::from(v)
         }
-        if version.eq(&self.version_stable) {
-            return format!("Stable ({})", version);
-        }
-        String::from(version)
     }
 
     /**
@@ -99,9 +97,7 @@ impl Bot {
      * renders the result into Discord-friendly markdown
      */
     fn render_servers(&self, servers: &Servers, filter: &String) -> String {
-        let mut output = vec![];
         let mut sorted = vec![];
-
         for server in &servers.SERVERS {
             if !server.NAME.to_lowercase().contains(filter) {
                 continue;
@@ -114,6 +110,7 @@ impl Bot {
         sorted.sort_by_cached_key(|a| a.DCS_VERSION.clone());
         sorted.reverse();
 
+        let mut output = vec![];
         for server in sorted {
             output.push(format!(
                 "**{} - {}**\n\
@@ -182,48 +179,47 @@ impl Bot {
     }
 
     /**
-     * Handles errors received while broadcasting messages - returns the channel_id if 
-     * the channel should be unsubscribed from.
-     * 
-     * TODO: returning the id without explanation is a bit weird, make it less weird
+     * Handles errors received while broadcasting messages - if the message failed
+     * because the original message or channel are no-longer accessible, it will 
+     * append the channel_id to the unsubscribe list
      */
     fn handle_broadcast_error(
         &self,
         err: serenity::Error,
         message_id: u64,
         channel_id: u64,
-    ) -> Option<u64> {
+        unsubscribe_list: &mut Vec<u64>,
+    ) {
         // Do this here so it's before the err borrow
         let error_text = format!(
             "\x1b[31mError editing message {} in channel {}: {:?}\x1b[0m",
             message_id, channel_id, err
         );
 
-        match err {
-            serenity::Error::Http(http_err) => {
-                // Full set of error codes here. TODO: handle more of them
-                // https://discord.com/developers/docs/topics/opcodes-and-status-codes#json
-                if let UnsuccessfulRequest(req) = *http_err {
-                    if req.error.code == 10008 {
-                        println!(
-                            "\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m",
-                            message_id, channel_id
-                        );
-                        return Some(channel_id);
-                    } else if req.error.code == 10003 || req.error.code == 50001 {
-                        println!(
-                            "\x1b[31mBroadcast Error: Channel {} not found\x1b[0m",
-                            channel_id
-                        );
-                        return Some(channel_id);
-                    }
+        if let serenity::Error::Http(http_err) = err {
+            // Full set of error codes here. TODO: handle more of them
+            // https://discord.com/developers/docs/topics/opcodes-and-status-codes#json
+            if let UnsuccessfulRequest(req) = *http_err {
+                if req.error.code == 10008 {
+                    println!(
+                        "\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m",
+                        message_id, channel_id
+                    );
+                    unsubscribe_list.push(channel_id);
+                    return;
+                } else if req.error.code == 10003 || req.error.code == 50001 {
+                    println!(
+                        "\x1b[31mBroadcast Error: Channel {} not found\x1b[0m",
+                        channel_id
+                    );
+                    unsubscribe_list.push(channel_id);
+                    return;
                 }
             }
-            _ => {}
         }
 
         println!("{}", error_text);
-        return None;
+        return;
     }
 
     /**
@@ -234,7 +230,7 @@ impl Bot {
      * TODO: Consider messaging server owner on unsubscribe
      */
     async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) -> Result<()> {
-        let mut unsubscribe_list = vec![];
+        let mut unsubscribe_list = Vec::<u64>::new();
 
         for (channel_id, sub) in self.channels.clone().iter_mut() {
             // Get the text we went to send for this channel
@@ -249,17 +245,14 @@ impl Bot {
 
             // Send the message and handle any errors; if the message is not found,
             // add it to the unsubscribe list
-            match ChannelId(*channel_id)
+            let res = ChannelId(*channel_id)
                 .edit_message(http, sub.message_id, |m| m.content(content.clone()))
-                .await
-            {
+                .await;
+
+            match res {
                 Ok(_) => sub.last_content = content,
                 Err(err) => {
-                    if let Some(unsubcribe_channel) =
-                        self.handle_broadcast_error(err, sub.message_id, *channel_id)
-                    {
-                        unsubscribe_list.push(unsubcribe_channel);
-                    }
+                    self.handle_broadcast_error(err, sub.message_id, *channel_id, &mut unsubscribe_list)
                 }
             }
         }
