@@ -146,16 +146,17 @@ impl Bot {
              To stop receiving updates, delete this message or type `!dcsbot unsubscribe`", 
             filter);
 
+        // Post the message to the channel, then store its message_id so future updates
+        // will edit this message, otherwise fail
         match ChannelId(channel_id).say(http, content.clone()).await {
             Ok(message) => {
-                let sub = Sub {
+                self.channels.insert(channel_id, Sub {
                     message_id: message.id.0,
                     filter,
                     last_content: content,
-                };
-                self.channels.insert(channel_id, sub);
+                });
             }
-            Err(err) => println!("Error sending message: {:?}", err),
+            Err(err) => println!("Error sending setup message: {:?}", err),
         }
     }
 
