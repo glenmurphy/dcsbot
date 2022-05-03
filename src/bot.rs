@@ -181,6 +181,12 @@ impl Bot {
         self.channels.remove(&channel_id);
     }
 
+    /**
+     * Handles errors received while broadcasting messages - returns the channel_id if 
+     * the channel should be unsubscribed from.
+     * 
+     * TODO: returning the id without explanation is a bit weird, make it less weird
+     */
     fn handle_broadcast_error(
         &self,
         err: serenity::Error,
