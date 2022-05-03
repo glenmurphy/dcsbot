@@ -181,10 +181,17 @@ impl Bot {
         self.channels.remove(&channel_id);
     }
 
-    fn handle_broadcast_error(&self, err: serenity::Error, message_id: u64, channel_id: u64) -> Option<u64> {
+    fn handle_broadcast_error(
+        &self,
+        err: serenity::Error,
+        message_id: u64,
+        channel_id: u64,
+    ) -> Option<u64> {
         // Do this here so it's before the err borrow
-        let error_text = format!("\x1b[31mError editing message {} in channel {}: {:?}\x1b[0m",
-            message_id, channel_id, err);
+        let error_text = format!(
+            "\x1b[31mError editing message {} in channel {}: {:?}\x1b[0m",
+            message_id, channel_id, err
+        );
 
         match err {
             serenity::Error::Http(http_err) => {
@@ -192,10 +199,16 @@ impl Bot {
                 // https://discord.com/developers/docs/topics/opcodes-and-status-codes#json
                 if let UnsuccessfulRequest(req) = *http_err {
                     if req.error.code == 10008 {
-                        println!("\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m", message_id, channel_id);
+                        println!(
+                            "\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m",
+                            message_id, channel_id
+                        );
                         return Some(channel_id);
                     } else if req.error.code == 10003 || req.error.code == 50001 {
-                        println!("\x1b[31mBroadcast Error: Channel {} not found\x1b[0m", channel_id);
+                        println!(
+                            "\x1b[31mBroadcast Error: Channel {} not found\x1b[0m",
+                            channel_id
+                        );
                         return Some(channel_id);
                     }
                 }
@@ -204,7 +217,7 @@ impl Bot {
         }
 
         println!("{}", error_text);
-        return None
+        return None;
     }
 
     /**
@@ -236,7 +249,9 @@ impl Bot {
             {
                 Ok(_) => sub.last_content = content,
                 Err(err) => {
-                    if let Some(unsubcribe_channel) = self.handle_broadcast_error(err, sub.message_id, *channel_id) {
+                    if let Some(unsubcribe_channel) =
+                        self.handle_broadcast_error(err, sub.message_id, *channel_id)
+                    {
                         unsubscribe_list.push(unsubcribe_channel);
                     }
                 }
@@ -246,7 +261,7 @@ impl Bot {
         // Unsubscribe from any channels where we couldn't find the message
         if !unsubscribe_list.is_empty() {
             for channel_id in &unsubscribe_list {
-                 self.unsubscribe_channel(http, *channel_id).await;
+                self.unsubscribe_channel(http, *channel_id).await;
             }
             let _ = self.save_channels().await;
         }
