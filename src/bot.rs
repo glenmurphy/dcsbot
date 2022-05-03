@@ -84,7 +84,7 @@ impl Bot {
     fn format_version(&self, version: &str) -> String {
         match self.versions.get(version) {
             Some(vstr) => String::from(vstr),
-            None => String::from(version)
+            None => String::from(version),
         }
     }
 
@@ -149,13 +149,14 @@ impl Bot {
         // Post the message to the channel, then store its message_id so future updates
         // will edit this message, otherwise fail
         match ChannelId(channel_id).say(http, content.clone()).await {
-            Ok(message) => {
-                self.channels.insert(channel_id, Sub {
+            Ok(message) => self.channels.insert(
+                channel_id,
+                Sub {
                     message_id: message.id.0,
                     filter,
                     last_content: content,
-                });
-            }
+                },
+            ),
             Err(err) => println!("Error sending setup message: {:?}", err),
         }
     }
@@ -177,7 +178,7 @@ impl Bot {
 
     /**
      * Handles errors received while broadcasting messages - if the message failed
-     * because the original message or channel are no-longer accessible, it will 
+     * because the original message or channel are no-longer accessible, it will
      * append the channel_id to the unsubscribe list
      */
     fn handle_broadcast_error(
@@ -197,20 +198,24 @@ impl Bot {
             // Full set of error codes here. TODO: handle more of them
             // https://discord.com/developers/docs/topics/opcodes-and-status-codes#json
             if let UnsuccessfulRequest(req) = *http_err {
-                if req.error.code == 10008 {
-                    println!(
-                        "\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m",
-                        message_id, channel_id
-                    );
-                    unsubscribe_list.push(channel_id);
-                    return;
-                } else if req.error.code == 10003 || req.error.code == 50001 {
-                    println!(
-                        "\x1b[31mBroadcast Error: Channel {} not found\x1b[0m",
-                        channel_id
-                    );
-                    unsubscribe_list.push(channel_id);
-                    return;
+                match req.error.code {
+                    10008 => {
+                        println!(
+                            "\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m",
+                            message_id, channel_id
+                        );
+                        unsubscribe_list.push(channel_id);
+                        return;
+                    }
+                    10003 | 50001 => {
+                        println!(
+                            "\x1b[31mBroadcast Error: Channel {} not found\x1b[0m",
+                            channel_id
+                        );
+                        unsubscribe_list.push(channel_id);
+                        return;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -248,9 +253,12 @@ impl Bot {
 
             match res {
                 Ok(_) => sub.last_content = content,
-                Err(err) => {
-                    self.handle_broadcast_error(err, sub.message_id, *channel_id, &mut unsubscribe_list)
-                }
+                Err(err) => self.handle_broadcast_error(
+                    err,
+                    sub.message_id,
+                    *channel_id,
+                    &mut unsubscribe_list,
+                ),
             }
         }
 
