@@ -10,7 +10,7 @@ use std::fs::OpenOptions;
 use std::io::{BufReader, Result};
 use tokio::sync::mpsc;
 
-use crate::dcs::{Servers, ServersMessage};
+use crate::dcs::{Servers, Server, ServersMessage};
 use crate::handler::{Handler, HandlerMessage};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -93,7 +93,7 @@ impl Bot {
      * renders the result into Discord-friendly markdown
      */
     fn render_servers(&self, servers: &Servers, filter: &String) -> String {
-        let mut sorted = vec![];
+        let mut sorted = Vec::<&Server>::new();
         for server in &servers.SERVERS {
             if !server.NAME.to_lowercase().contains(filter) {
                 continue;
@@ -106,7 +106,7 @@ impl Bot {
         sorted.sort_by_cached_key(|a| a.DCS_VERSION.clone());
         sorted.reverse();
 
-        let mut output = vec![];
+        let mut output = Vec::<String>::new();
         for server in sorted {
             output.push(format!(
                 "**{} - {}**\n\
@@ -149,14 +149,14 @@ impl Bot {
         // Post the message to the channel, then store its message_id so future updates
         // will edit this message, otherwise fail
         match ChannelId(channel_id).say(http, content.clone()).await {
-            Ok(message) => self.channels.insert(
-                channel_id,
-                Sub {
+            Ok(message) => { 
+                let sub = Sub {
                     message_id: message.id.0,
                     filter,
                     last_content: content,
-                },
-            ),
+                };
+                self.channels.insert(channel_id, sub);
+            },
             Err(err) => println!("Error sending setup message: {:?}", err),
         }
     }
