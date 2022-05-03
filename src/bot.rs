@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json;
+use serenity::http::error::Error::UnsuccessfulRequest;
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
 use serenity::prelude::GatewayIntents;
@@ -180,45 +181,71 @@ impl Bot {
         self.channels.remove(&channel_id);
     }
 
+    fn handle_broadcast_error(&self, err: serenity::Error, message_id: u64, channel_id: u64) -> Option<u64> {
+        // Do this here so it's before the err borrow
+        let error_text = format!("\x1b[31mError editing message {} in channel {}: {:?}\x1b[0m",
+            message_id, channel_id, err);
+
+        match err {
+            serenity::Error::Http(http_err) => {
+                // TODO: Handle channel-not-found messages
+                if let UnsuccessfulRequest(req) = *http_err {
+                    if req.error.code == 10008 {
+                        println!("\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m", message_id, channel_id);
+                        return Some(channel_id);
+                    } else if req.error.code == 10003 || req.error.code == 50001 {
+                        println!("\x1b[31mBroadcast Error: Channel {} not found\x1b[0m", channel_id);
+                        return Some(channel_id);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        println!("{}", error_text);
+        return None
+    }
+
     /**
      * Go through all subscribed channels/message_ids and update the messages with
      * the current server status. Will unsubscribe from any channel where the update
      * fails (usually because the message was deleted or we lost posting permissions)
-     * 
+     *
      * TODO: Consider messaging server owner on unsubscribe
      */
     async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) -> Result<()> {
         let mut unsubscribe_list = vec![];
 
         for (channel_id, sub) in self.channels.clone().iter_mut() {
+            // Get the text we went to send for this channel
             let content = self.render_servers(&servers, &sub.filter);
 
+            // If it's the same as last time, abort
+            // TODO: consider sending anyway after N minutes so the edited time
+            // can be bumped (in case people use that to determine staleness)
             if content.eq(&sub.last_content) {
                 continue;
             }
 
+            // Send the message and handle any errors; if the message is not found,
+            // add it to the unsubscribe list
             match ChannelId(*channel_id)
                 .edit_message(http, sub.message_id, |m| m.content(content.clone()))
                 .await
             {
-                Ok(_) => {
-                    sub.last_content = content;
-                }
-                Err(_) => {
-                    // channel_id or message_id might be invalid; unsubscribe
-                    println!(
-                        "\x1b[31mError editing message {} in channel {}\x1b[0m",
-                        sub.message_id, channel_id
-                    );
-                    unsubscribe_list.push(*channel_id);
-                    continue;
+                Ok(_) => sub.last_content = content,
+                Err(err) => {
+                    if let Some(unsubcribe_channel) = self.handle_broadcast_error(err, sub.message_id, *channel_id) {
+                        unsubscribe_list.push(unsubcribe_channel);
+                    }
                 }
             }
         }
 
+        // Unsubscribe from any channels where we couldn't find the message
         if !unsubscribe_list.is_empty() {
             for channel_id in &unsubscribe_list {
-                self.unsubscribe_channel(http, *channel_id).await;
+                 self.unsubscribe_channel(http, *channel_id).await;
             }
             let _ = self.save_channels().await;
         }
