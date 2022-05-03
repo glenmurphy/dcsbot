@@ -188,7 +188,8 @@ impl Bot {
 
         match err {
             serenity::Error::Http(http_err) => {
-                // TODO: Handle channel-not-found messages
+                // Full set of error codes here. TODO: handle more of them
+                // https://discord.com/developers/docs/topics/opcodes-and-status-codes#json
                 if let UnsuccessfulRequest(req) = *http_err {
                     if req.error.code == 10008 {
                         println!("\x1b[31mBroadcast Error: Message {} not found in channel {}\x1b[0m", message_id, channel_id);
