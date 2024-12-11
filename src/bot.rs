@@ -92,7 +92,7 @@ impl Bot {
      * Takes a list of all the servers, finds the one matching <filter>, and
      * renders the result into Discord-friendly markdown
      */
-    fn render_servers(&self, servers: &Servers, filter: &String) -> String {
+    fn render_servers(&self, servers: &Servers, filter: &String) -> (usize, std::string::String) {
         let mut sorted = Vec::<&Server>::new();
         for server in &servers.SERVERS {
             if !server.NAME.to_lowercase().contains(filter) {
@@ -107,7 +107,7 @@ impl Bot {
         sorted.reverse();
 
         let mut output = Vec::<String>::new();
-        for server in sorted {
+        for server in &sorted {
             output.push(format!(
                 "**{} - {}**\n\
                 {}, {}, {}:{}\n\n",
@@ -125,11 +125,11 @@ impl Bot {
         }
 
         // Crop output to discord limits
-        let string = output.join("");
+        let mut string = output.join("");
         if string.len() > 1999 {
-            return string.split_at(1999).0.to_string();
+            string = string.split_at(1999).0.to_string();
         }
-        string
+        (sorted.len(), string)
     }
 
     /**
@@ -232,17 +232,25 @@ impl Bot {
      * TODO: Consider messaging server owner on unsubscribe
      */
     async fn broadcast_servers(&mut self, http: &Http, servers: &Servers) -> Result<()> {
+        println!("Broadcasting servers ({} total)", servers.SERVERS.len());
         let mut unsubscribe_list = Vec::<u64>::new();
 
         for (channel_id, sub) in self.channels.clone().iter_mut() {
             // Get the text we went to send for this channel
-            let content = self.render_servers(&servers, &sub.filter);
+            let (num, content) = self.render_servers(&servers, &sub.filter);
 
             // If it's the same as last time, abort
             // TODO: consider sending anyway after N minutes so the edited time
             // can be bumped (in case people use that to determine staleness)
-            if content.eq(&sub.last_content) {
+            // if content.eq(&sub.last_content) {
+            //    continue;
+            // }
+
+            if content.is_empty() {
+                println!("- No servers found for filter '{}'", sub.filter);
                 continue;
+            } else {
+                println!("- {} servers found for filter '{}'", num, sub.filter);
             }
 
             // Send the message and handle any errors; if the message is not found,
@@ -277,6 +285,7 @@ impl Bot {
      * Load stored channel subscriptions from our file on disk
      */
     fn load_channels(&mut self) -> Result<()> {
+        println!("Loading channels");
         let file = OpenOptions::new()
             .read(true)
             .open(self.config_path.clone())?;
@@ -293,6 +302,7 @@ impl Bot {
      * should run in its own watch-channel-powered thread
      */
     async fn save_channels(&self) -> Result<()> {
+        println!("Saving channels");
         let file = OpenOptions::new()
             .truncate(true)
             .write(true)

@@ -30,6 +30,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n\nStarting dcsbot...");
     let args = Args::parse();
     let (servers_tx, servers_rx) = mpsc::channel(1);
 

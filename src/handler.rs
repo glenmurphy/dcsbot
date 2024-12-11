@@ -7,6 +7,7 @@ use serenity::model::user::User;
 use serenity::prelude::*;
 use tokio::sync::mpsc::UnboundedSender;
 
+#[derive(Debug)]
 pub enum HandlerMessage {
     SubscribeChannel(u64, String), // channel_id, filter
     UnsubscribeChannel(u64),

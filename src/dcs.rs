@@ -34,6 +34,7 @@ pub struct Servers {
     //MY_SERVERS : Vec<Server>
 }
 
+#[derive(Debug)]
 pub enum ServersMessage {
     Servers(Servers),
     Versions((String, String)),
@@ -53,45 +54,92 @@ fn parse_cookie(headers: &HeaderMap) -> String {
     cookies.join(", ")
 }
 
+
+fn get_between(source: &str, start: &str, end: &str) -> Option<String> {
+    let start_pos = source.find(start)?;
+    let source = &source[start_pos + start.len()..];
+    let end_pos = source.find(end)?;
+    Some(source[..end_pos].to_string())
+}
 /**
  * Gets a login cookie from the DCS website
  */
 async fn login(username: String, password: String) -> Result<String, &'static str> {
+    println!("Logging in");
+
     if username.is_empty() || password.is_empty() {
         return Err("No username or password");
     }
 
+    let hello = reqwest::Client::new()
+        .get("https://www.digitalcombatsimulator.com/en/personal/profile/?login=yes")
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await;
+
+    let res = match hello {
+        Ok(res) => res,
+        Err(_e) => return Err("Failed to get login page"),
+    };
+
+    // Get PHP SessID
+    let hello_cookies = parse_cookie(res.headers());
+    let dcs_sessid = get_between(&hello_cookies, "DCSSESSID=", ";").unwrap();
+    println!("dcssessid: {}", dcs_sessid);
+
+    // Get session ID
+    let body = res.text().await.unwrap();
+    let sessid = get_between(&body, "bitrix_sessid\":\"", "\"});</script>").unwrap();
+    println!("Sessid: {}", sessid);
+
     let mut login_headers = HeaderMap::new();
-    login_headers.insert(
-        "content-type",
-        "application/x-www-form-urlencoded".parse().unwrap(),
-    );
+    
+    login_headers.insert( "content-type",    "application/x-www-form-urlencoded".parse().unwrap() );
+    login_headers.insert( "Cookie", hello_cookies.parse().unwrap());
 
-    let client = reqwest::Client::new();
-    let res = client.post("https://www.digitalcombatsimulator.com/en/")
+    let login_result = reqwest::Client::new().post("https://www.digitalcombatsimulator.com/en/personal/profile/?login=yes")
         .headers(login_headers)
-        .body(format!("AUTH_FORM=Y&TYPE=AUTH&backurl=%2Fen%2F&USER_LOGIN={}&USER_PASSWORD={}&USER_REMEMBER=Y&Login=Authorize", username, password))
-        .send().await
-        .unwrap();
+        .body(format!("sessid={}&AUTH_FORM=Y&TYPE=AUTH&backurl=%2Fen%2F&USER_LOGIN={}&USER_PASSWORD={}&USER_REMEMBER=1&Login", sessid, username, password))
+        .timeout(Duration::from_secs(60))
+        .send().await;
 
-    let cookies = parse_cookie(res.headers());
-    if !cookies.contains("BITRIX_SM_UIDL=") {
-        return Err("username/password incorrect");
+    match login_result {
+        Ok(res) => {
+            let cookies = parse_cookie(res.headers());
+            //println!("Cookies: {}", cookies);
+            if !cookies.contains("DCS_UIDD=") {
+                return Err("username/password incorrect");
+            }
+        
+            let uidd = get_between(&cookies, "DCS_UIDD=", ";").unwrap();
+            let login = get_between(&cookies, "DCS_LOGIN=", ";").unwrap();
+            
+            // Create cookies string
+            let result = format!("DCS_UIDD={}; DCS_LOGIN={}; DCS_SOUND_LOGIN_PLAYED=Y; DCS_SALE_UID=0; DCSSESSID={}", uidd, login, dcs_sessid);
+            println!("Cookies: {}", result);
+        
+            return Ok(result)
+        },
+        Err(err) => {
+            println!("Login failed {:?}", err);
+            return Err("Login failed");
+        }
     }
-
-    Ok(cookies)
 }
 
 /**
  * Gets the current list of servers from the DCS website
  */
 async fn get_servers(cookies: String) -> Result<Servers, String> {
+    println!("Getting servers");
     let mut headers = HeaderMap::new();
     headers.insert(reqwest::header::COOKIE, cookies.parse().unwrap());
+    headers.insert( "content-type", "application/x-www-form-urlencoded".parse().unwrap() );
 
     let servers_result = reqwest::Client::new()
         .get("https://www.digitalcombatsimulator.com/en/personal/server/?ajax=y")
         .headers(headers)
+        .timeout(Duration::from_secs(120))
         .send()
         .await;
 
@@ -105,6 +153,7 @@ async fn get_servers(cookies: String) -> Result<Servers, String> {
 }
 
 async fn parse_versions(text: String) -> Result<(String, String), String> {
+    println!("Parsing versions");
     let mut lines = text.split("/en/news/changelog/openbeta/");
     let beta = match lines.nth(2) {
         Some(line) => line.split("/").nth(0).unwrap(),
@@ -123,6 +172,7 @@ async fn parse_versions(text: String) -> Result<(String, String), String> {
 async fn get_versions() -> Result<(String, String), String> {
     let versions_result = reqwest::Client::new()
         .get("https://www.digitalcombatsimulator.com/en/news/changelog/")
+        .timeout(Duration::from_secs(90))
         .send()
         .await;
 
@@ -155,7 +205,7 @@ async fn run_dcs(username: String, password: String, servers_tx: mpsc::Sender<Se
                     let _ = servers_tx.send(ServersMessage::Versions(versions)).await;
                     last_version_fetch = now;
                 }
-                Err(err) => println!("Version fetch error: {:?}", err),
+                Err(err) => println!("dcs.rs run_dcs(): version fetch error: {:?}", err),
             }
         }
 
@@ -187,8 +237,8 @@ pub async fn start(username: String, password: String, servers_tx: mpsc::Sender<
     loop {
         run_dcs(username.clone(), password.clone(), servers_tx.clone()).await;
 
-        // Only reaches this in case of failure - consider notifying and
-        // exponential backoff
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        // Only reaches this in case of failure - consider exponential backoff
+        println!("\x1b[31mdcs.rs error: Restarting in 120 seconds\x1b[0m");
+        tokio::time::sleep(Duration::from_secs(120)).await;
     }
 }
