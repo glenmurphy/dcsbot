@@ -160,7 +160,7 @@ async fn parse_versions(text: String) -> Result<(String, String), String> {
         _ => return Err("Beta version not found".to_string()),
     };
 
-    let mut lines = text.split("/en/news/changelog/stable/");
+    let mut lines = text.split("/en/news/changelog/release/");
     let stable = match lines.nth(2) {
         Some(line) => line.split("/").nth(0).unwrap(),
         _ => return Err("Stable version not found".to_string()),

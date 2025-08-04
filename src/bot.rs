@@ -95,7 +95,7 @@ impl Bot {
     fn render_servers(&self, servers: &Servers, filter: &String) -> (usize, std::string::String) {
         let mut sorted = Vec::<&Server>::new();
         for server in &servers.SERVERS {
-            if !server.NAME.to_lowercase().contains(filter) {
+            if !server.NAME.to_lowercase().contains(filter.to_lowercase().as_str()) {
                 continue;
             }
             sorted.push(server);
